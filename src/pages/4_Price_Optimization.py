@@ -42,7 +42,7 @@ def callback1():
 
 if (
     'df' in st.session_state and isinstance(st.session_state.df, pd.DataFrame) and not st.session_state.df.empty and
-    'elastic' in st.session_state and st.session_state.elastic != '' and
+    'elastic' in st.session_state and isinstance(st.session_state.elastic, pd.DataFrame) and not st.session_state.elastic.empty and
     'forecast' in st.session_state and isinstance(st.session_state.forecast, pd.DataFrame) and not st.session_state.forecast.empty
 ):
     st.title("Optimization Results")
