@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import altair as alt
 
-@st.experimental_memo
+@st.cache_data
 def simulate(x, e, bp, bq):
     perc_qty_change = np.multiply(e,x)
     new_price = bp + np.multiply(bp,x)
