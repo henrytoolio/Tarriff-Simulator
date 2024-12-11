@@ -69,29 +69,20 @@ if (
 
     num_items = e.size # number of items
 
-   if st.sidebar.button("Optimize", on_click=callback1):
+  if st.sidebar.button("Optimize", on_click=callback1):
         with st.spinner("Optimizing..."):
             st.session_state.opt_price_p = max_price
             st.session_state.opt_budget = max_budget
-
-            # Add a progress bar
-            progress_bar = st.progress(0)
-
-            def callback_func(current_progress):
-            progress_bar.progress(current_progress)
-
-            # Optimizer
             st.session_state.opt = differential_evolution(
                 objective_func,
-                x0=-(max_price/100)*np.ones(num_items)*0.5,
+                x0=-(max_price / 100) * np.ones(num_items) * 0.5,
                 args=(e, bp, bq),
-                bounds=Bounds(lb=-(max_price/100)*np.ones(num_items), ub=np.zeros(num_items)),
+                bounds=Bounds(lb=-(max_price / 100) * np.ones(num_items), ub=np.zeros(num_items)),
                 constraints=NonlinearConstraint(lambda x: investment(x, bp, bq), lb=0, ub=max_budget),
                 seed=1234,
-                maxiter=200,  # Reduce iterations
-                popsize=10,   # Smaller population size
-                workers=-1,   # Parallelize across CPUs
-                callback=callback_func
+                maxiter=200,
+                popsize=10,
+                workers=-1
             )
 
     if st.session_state.btn3:
