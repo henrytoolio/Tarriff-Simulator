@@ -56,7 +56,7 @@ def callback1():
     st.session_state['btn'] = True
 
 # Main application logic
-if st.session_state.get('df', '') != '':
+if 'df' in st.session_state and not st.session_state['df'].empty:
     st.title("Demand Forecast")
     st.caption("Leverage weekly historical sales data to create a 4-week demand forecast, taking into account factors such as seasonality and trends.")
 
