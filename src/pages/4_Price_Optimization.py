@@ -40,17 +40,21 @@ def callback1():
     st.session_state['btn3'] = True
 
 
-if st.session_state.df != '' and st.session_state.elastic != '' and st.session_state.forecast != '':
-
+if (
+    'df' in st.session_state and isinstance(st.session_state.df, pd.DataFrame) and not st.session_state.df.empty and
+    'elastic' in st.session_state and st.session_state.elastic != '' and
+    'forecast' in st.session_state and isinstance(st.session_state.forecast, pd.DataFrame) and not st.session_state.forecast.empty
+):
     st.title("Optimization Results")
 
     df = st.session_state.df
 
     e = st.session_state.elastic['Elasticities'].to_numpy()
-    bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()   
+    bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()
     bq = st.session_state.forecast.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
-    st.session_state.slider_budget = round(int(np.dot(bp,bq)))
-    budget = round(int(np.dot(bp,bq)))
+    st.session_state.slider_budget = round(int(np.dot(bp, bq)))
+    budget = round(int(np.dot(bp, bq)))
+
 
 
     if st.session_state.opt_budget == '':
