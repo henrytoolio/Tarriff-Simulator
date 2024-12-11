@@ -4,7 +4,7 @@ import numpy as np
 
 # option = st.sidebar.radio("Pick Option", ('Upload File', 'Simulate Data'))
 
-@st.experimental_memo
+@st.experimental_user
 def get_data(file):
     df = pd.read_csv(file)
     return df
