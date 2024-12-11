@@ -6,3 +6,5 @@ prophet
 setuptools>=67.0.0
 wheel
 holidays
+scipy
+scikit_learn
