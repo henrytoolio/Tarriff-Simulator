@@ -4,7 +4,7 @@ import pandas as pd
 from scipy.optimize import differential_evolution, NonlinearConstraint, Bounds
 import altair as alt
 
-@st.experimental_memo
+@st.cache_data
 def objective_func(x, e, bp, bq):
     perc_qty_change = np.multiply(e,x)
     new_price = bp + np.multiply(bp,x)
