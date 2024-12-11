@@ -15,7 +15,7 @@ def get_elasticities(df):
     reg.fit(x, y)
     return reg
 
-@st.experimental_memo
+@st.cache_data
 def Elasticities_Model_loop(df):
     all_elastic=pd.DataFrame()
     progress = 0
