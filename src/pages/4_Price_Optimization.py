@@ -12,7 +12,7 @@ def objective_func(x, e, bp, bq):
     revenue = np.dot(new_price, new_qty)
     return -revenue
 
-@st.experimental_memo
+@st.cache_data
 def investment(x,bp,bq):
     new_price = bp + np.multiply(bp,x)
     lm = bp - new_price
