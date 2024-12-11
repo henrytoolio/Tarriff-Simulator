@@ -68,7 +68,6 @@ if (
         max_price=st.sidebar.slider("Maximum Price Reduction:",0,50,st.session_state.opt_price_p, step=5, help = "Maximum Price Reduction Allowed per Item ", format="%d%%")
 
     num_items = e.size # number of items
-
   if st.sidebar.button("Optimize", on_click=callback1):
         with st.spinner("Optimizing..."):
             st.session_state.opt_price_p = max_price
