@@ -40,7 +40,7 @@ def callback1():
     st.session_state['btn3'] = True
 
 
-if st.session_state.df is not '' and st.session_state.elastic is not '' and st.session_state.forecast is not '':
+if st.session_state.df != '' and st.session_state.elastic != '' and st.session_state.forecast != '':
 
     st.title("Optimization Results")
 
