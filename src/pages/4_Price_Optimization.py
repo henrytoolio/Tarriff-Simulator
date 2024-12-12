@@ -90,7 +90,7 @@ if (
                 seed=1234,
                 maxiter=200,  # Reduce iterations
                 popsize=10,   # Smaller population size
-                workers=-1,   # Parallelize across CPUs
+                workers= 1,   # Parallelize across CPUs
                 callback=callback_func
             )
     if st.session_state.btn3:
