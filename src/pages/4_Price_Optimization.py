@@ -72,9 +72,10 @@ if (
 
             # Add a progress bar
             progress_bar = st.progress(0)
-
-            def callback_func(current_progress):
-                progress_bar.progress(current_progress)
+            
+            # Update the callback function to accept two arguments
+            def callback_func(x, convergence):
+                progress_bar.progress(min(convergence, 1.0))  # Update progress
 
             # Optimizer
             st.session_state.opt = differential_evolution(
