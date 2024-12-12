@@ -70,7 +70,7 @@ if (
     num_items = e.size # number of items
 
    if st.sidebar.button("Optimize", on_click=callback1):
-        with st.spinner("Optimizing..."):
+       with st.spinner("Optimizing..."):
             st.session_state.opt_price_p = max_price
             st.session_state.opt_budget = max_budget
 
