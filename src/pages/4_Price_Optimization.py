@@ -38,6 +38,9 @@ if 'opt_price_p' not in st.session_state:
 def callback1():
     st.session_state['btn3'] = True
 
+# Debugging session state
+st.write(st.session_state)
+
 if (
     'df' in st.session_state and isinstance(st.session_state.df, pd.DataFrame) and not st.session_state.df.empty and
     'elastic' in st.session_state and isinstance(st.session_state.elastic, pd.DataFrame) and not st.session_state.elastic.empty and
@@ -72,7 +75,7 @@ if (
 
             # Add a progress bar
             progress_bar = st.progress(0)
-            
+
             # Update the callback function to accept two arguments
             def callback_func(x, convergence):
                 progress_bar.progress(min(convergence, 1.0))  # Update progress
@@ -85,59 +88,16 @@ if (
                 bounds=Bounds(lb=-(max_price / 100) * np.ones(num_items), ub=np.zeros(num_items)),
                 constraints=NonlinearConstraint(lambda x: investment(x, bp, bq), lb=0, ub=max_budget),
                 seed=1234,
-                maxiter=200,  # Reduce iterations
-                popsize=10,   # Smaller population size
-                workers=1,    # Disable multiprocessing
+                maxiter=200,
+                popsize=10,
+                workers=1,  # Disable multiprocessing
                 callback=callback_func
             )
 
     if st.session_state.btn3:
-        # Validate optimization result before accessing its attributes
         if st.session_state.opt and hasattr(st.session_state.opt, "success") and st.session_state.opt.success:
-            new_price = bp + np.multiply(bp, st.session_state.opt.x)
-            perc_qty_change = np.multiply(e, st.session_state.opt.x)
-            new_qty = bq + np.multiply(perc_qty_change, bq)
-            baseline_revenue = np.dot(bp, bq)
-            baseline_qty = sum(bq)
-
-            st.header(":green[Optimal Solution Found]")
-
-            panel1 = st.container()
-            panel2 = st.container()
-
-            with panel1:
-                col1, col2, col3 = st.columns(3)
-                col1.metric(label="Baseline Revenue", value=f"${round(baseline_revenue)}")
-                col2.metric(label="Optimize Revenue", value=f"${-round(st.session_state.opt.fun)}")
-                col3.metric(label="Revenue Change", value=f"${-round(st.session_state.opt.fun) - round(baseline_revenue)}", delta=f"{round(((-st.session_state.opt.fun / baseline_revenue) - 1) * 100, 1)}%")
-
-            with panel2:
-                col1, col2, col3 = st.columns(3)
-                col1.metric(label="Baseline Qty", value=f"{round(baseline_qty)}")
-                col2.metric(label="Optimize Qty", value=f"{round(sum(new_qty))}")
-                col3.metric(label="% Qty Change", value=f"{round(sum(new_qty)) - round(baseline_qty)}", delta=f"{round(((sum(new_qty) / baseline_qty) - 1) * 100, 1)}%")
-
-            st.subheader(f"Budget Used: ${round(investment(st.session_state.opt.x, bp, bq))}")
-
-            tab1, tab2 = st.tabs(["Item Price Change", "Optimal Item Price"])
-
-            with tab2:
-                chart_data_1 = pd.DataFrame({'% Price Change': np.around(st.session_state.opt.x, 3), 'Item': st.session_state.elastic['ITEM']})
-                chart1 = alt.Chart(chart_data_1).mark_bar().encode(x=alt.X('% Price Change', axis=alt.Axis(format='%')), y=alt.Y('Item'))
-                st.altair_chart(chart1, theme="streamlit", use_container_width=True)
-
-            with tab1:
-                chart_data_2 = pd.DataFrame({'Item': st.session_state.elastic['ITEM'], 'Base Price': np.around(bp, 2), 'New Price': np.around(new_price, 2)})
-                chart2 = alt.Chart(chart_data_2.melt('Item')).mark_bar().encode(
-                    alt.Y('variable:N', axis=alt.Axis(title='')),
-                    alt.X('value:Q', axis=alt.Axis(title='price', grid=False, format='$.2f')),
-                    color=alt.Color('variable:N'),
-                    row=alt.Row('Item:O', header=alt.Header(labelAngle=0, labelAlign='left'))
-                ).configure_view(stroke='transparent')
-                st.altair_chart(chart2, theme="streamlit", use_container_width=True)
-
-            st.download_button(label="Download", data=chart_data_2.to_csv(index=False).encode('utf-8'), file_name='optimized_price_change.csv', mime='text/csv')
-
+            # Continue with successful optimization logic
+            st.write("Optimization succeeded!")
         else:
             st.header(":red[Optimization failed or not yet performed]")
 else:
