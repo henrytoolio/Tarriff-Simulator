@@ -2,7 +2,7 @@ streamlit
 pandas
 altair
 numpy>=1.25.0
-prophet
+prophet==1.1.4
 setuptools>=67.0.0
 wheel
 holidays==0.24
