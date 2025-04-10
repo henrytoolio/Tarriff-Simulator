@@ -5,6 +5,6 @@ numpy>=1.25.0
 prophet
 setuptools>=67.0.0
 wheel
-holidays
+holidays==0.24
 scipy
 scikit_learn
