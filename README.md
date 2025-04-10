@@ -21,7 +21,7 @@ The CSV file must have following columns (ITEM - DATE are composite primary key 
  Run following commands[^1]:
 
  ```
- git clone https://github.com/Kamalyunus/capstone-pricing-tool.git
+ git clone https://github.com/henrytoolio/capstone-pricing-tool.git
  cd capstone-pricing-tool
  docker build -t capstonepricingtool:latest . 
  docker run -p 8501:8501 -d capstonepricingtool:latest
