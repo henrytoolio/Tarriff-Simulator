@@ -45,7 +45,7 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
 
     e = st.session_state.elastic['Elasticities'].to_numpy()
     bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()
-    bc = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].UNIT_COST.to_numpy()
+    bc = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].["unit_cost"].to_numpy()
     bq = st.session_state.forecast.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
     num_items = e.size
 
