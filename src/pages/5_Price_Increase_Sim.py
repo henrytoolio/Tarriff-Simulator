@@ -40,9 +40,9 @@ if st.session_state.df is not '' and st.session_state.elastic is not '' and st.s
 
     # Price increase slider
     if st.session_state.user_p == '':
-        max_price = st.sidebar.slider("Price Increase for All Items:", 0, 50, 20, step=5, help="Price increase per item", format="%d%%")
+        max_price = st.sidebar.slider("Price Increase for Tarrif:", 0, 50, 20, step=5, help="Price increase per item", format="%d%%")
     else:
-        max_price = st.sidebar.slider("Price Increase for All Items:", 0, 50, st.session_state.user_p, step=5, help="Price increase per item", format="%d%%")
+        max_price = st.sidebar.slider("Price Increase for for Tarrif:", 0, 50, st.session_state.user_p, step=5, help="Price increase per item", format="%d%%")
 
     if st.sidebar.button("Calculate", on_click=callback1):
         with st.spinner("Please Wait..."):
