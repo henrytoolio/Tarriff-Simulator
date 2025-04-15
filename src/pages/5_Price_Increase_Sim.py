@@ -3,28 +3,29 @@ import numpy as np
 import pandas as pd
 import altair as alt
 
-# Simulate weekly demand after price change
+# --- Demand Simulation ---
 def simulate_weekly_demand(df_forecast, elasticity_dict, price_increase_pct):
     df = df_forecast.copy()
     df['Elasticity'] = df['ITEM'].map(elasticity_dict)
-    df['Pct_Change'] = price_increase_pct / 100  # scalar or dict of ITEM → pct
-    df['Adj_Factor'] = 1 + (df['Elasticity'] * df['Pct_Change'])
-    df['Adj_Units'] = df['UNIT_FORECAST'] * df['Adj_Factor']
+    df['Pct_Change'] = price_increase_pct / 100
+    df['PRICE'] = df['PRICE'].astype(float)
+    df['Adj_Price'] = df['PRICE'] * (1 + df['Pct_Change'])
+    df['Adj_Units'] = df['UNIT_FORECAST'] * (df['Adj_Price'] / df['PRICE']) ** df['Elasticity']
     return df
 
+# --- Optimizer: Maximize revenue within margin constraint ---
 def optimize_price_for_revenue(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, step=0.5):
     best_revenue = -np.inf
     best_increase = 0
     base_margin = np.dot(bp - bc, bq)
 
     for pct in np.arange(0, 100 + step, step):
-        x = np.ones_like(bp) * (pct / 100)
-        new_price = bp + bp * x
-        new_qty = bq + bq * e * x
+        x = pct / 100
+        new_price = bp * (1 + x)
+        new_qty = bq * (new_price / bp) ** e
         new_cost = bc * (1 + tariff_pct / 100)
-        
-        sim_margin = np.dot(new_price - new_cost, new_qty)
-        margin_delta_pct = ((sim_margin - base_margin) / base_margin) * 100
+        new_margin = np.dot(new_price - new_cost, new_qty)
+        margin_delta_pct = ((new_margin - base_margin) / base_margin) * 100
 
         if margin_delta_pct >= -max_margin_loss_pct:
             revenue = np.dot(new_price, new_qty)
@@ -33,54 +34,55 @@ def optimize_price_for_revenue(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, s
                 best_increase = pct
 
     return best_increase
-# Streamlit app
+
+# --- Streamlit App ---
 st.title("📊 Price Recommendation with Weekly Forecast Simulation")
 
 if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in st.session_state:
     df = st.session_state.df
-    forecast_df = st.session_state.forecast
+    forecast_df = st.session_state.forecast.copy()
     elasticity = st.session_state.elastic
 
     latest_df = df.loc[df.groupby("ITEM")["DATE"].idxmax()]
-    bp = latest_df["PRICE"].to_numpy()
-    bc = latest_df["Unit_cost"].to_numpy()
+    bp = latest_df["PRICE"].astype(float).to_numpy()
+    bc = latest_df["Unit_cost"].astype(float).to_numpy()
     e = elasticity['Elasticities'].to_numpy()
     items = elasticity['ITEM'].to_numpy()
     bq = forecast_df.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
 
     elasticity_dict = dict(zip(elasticity['ITEM'], elasticity['Elasticities']))
+    item_price_map = dict(zip(latest_df['ITEM'], latest_df['PRICE']))
+    forecast_df['PRICE'] = forecast_df['ITEM'].map(item_price_map)
 
     tariff_pct = st.sidebar.number_input("Tariff Increase (%)", 0.0, 100.0, 5.0, 0.5)
     max_margin_loss_pct = st.sidebar.number_input("Max Margin Loss (%)", 0.0, 100.0, 5.0, 0.5)
 
     if st.sidebar.button("Recommend Price Increase"):
         price_increase_pct = optimize_price_for_revenue(e, bp, bq, bc, tariff_pct, max_margin_loss_pct)
-        st.success(f"Recommended Price Increase: {price_increase_pct:.2f}%")
+        st.success(f"✅ Recommended Price Increase: **{price_increase_pct:.2f}%**")
 
-        # Showing Margin
-        new_price = bp + bp * (price_increase_pct / 100)
-        new_qty = bq + bq * e * (price_increase_pct / 100)
+        # --- Recompute metrics ---
+        new_price = bp * (1 + price_increase_pct / 100)
+        new_qty = bq * (new_price / bp) ** e
         new_cost = bc * (1 + tariff_pct / 100)
-        
+
         base_margin_total = np.dot(bp - bc, bq)
         new_margin_total = np.dot(new_price - new_cost, new_qty)
+        base_revenue = np.dot(bp, bq)
+        new_revenue = np.dot(new_price, new_qty)
 
+        # --- Display Margin & Revenue Summary ---
         st.markdown("### 💰 Margin Summary")
         st.metric("Original Total Margin", f"${base_margin_total:,.2f}")
         st.metric("New Total Margin", f"${new_margin_total:,.2f}")
-        st.metric("Change in Margin (%)", f"{((new_margin_total - base_margin_total) / base_margin_total) * 100:.2f}%")
-
-        base_revenue = np.dot(bp, bq)
-        new_revenue = np.dot(new_price, new_qty)
+        st.metric("Margin Δ (%)", f"{((new_margin_total - base_margin_total) / base_margin_total) * 100:.2f}%")
 
         st.markdown("### 📈 Revenue Summary")
         st.metric("Original Total Revenue", f"${base_revenue:,.2f}")
         st.metric("New Total Revenue", f"${new_revenue:,.2f}")
-        st.metric("Change in Revenue (%)", f"{((new_revenue - base_revenue) / base_revenue) * 100:.2f}%")
+        st.metric("Revenue Δ (%)", f"{((new_revenue - base_revenue) / base_revenue) * 100:.2f}%")
 
-
-
-        # Simulate weekly demand after applying optimal price increase
+        # --- Simulate Weekly Demand ---
         weekly_sim = simulate_weekly_demand(forecast_df, elasticity_dict, price_increase_pct)
 
         st.subheader("📆 Simulated Weekly Demand After Price Increase")
@@ -95,3 +97,4 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
                            file_name="adjusted_weekly_forecast.csv", mime="text/csv")
 else:
     st.warning("⚠️ Please upload your data and run the forecast and elasticity steps first.")
+
