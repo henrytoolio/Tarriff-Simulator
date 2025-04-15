@@ -15,7 +15,7 @@ def simulate_price_increase(x, e, bp, bq):
     margin_gain = np.dot(new_price - bp, new_qty)  # revenue gain from price increase
     return [baseline_revenue, sim_revenue, baseline_qty, sim_qty, margin_gain, new_price]
 
-# Session state variables
+# Initialize session state variables
 if 'btn2' not in st.session_state:
     st.session_state['btn2'] = False
 
@@ -28,7 +28,8 @@ if 'user_p' not in st.session_state:
 def callback1():
     st.session_state['btn2'] = True
 
-if st.session_state.df is not '' and st.session_state.elastic is not '' and st.session_state.forecast is not '':
+# Only proceed if previous steps are completed
+if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in st.session_state:
     st.title("Simulation Results")
 
     df = st.session_state.df
@@ -40,40 +41,67 @@ if st.session_state.df is not '' and st.session_state.elastic is not '' and st.s
 
     # Price increase slider
     if st.session_state.user_p == '':
-        max_price = st.sidebar.slider("Price Increase for Tarrif:", 0, 50, 20, step=5, help="Price increase per item", format="%d%%")
+        max_price = st.sidebar.slider("Price Increase for Tariff:", 0, 50, 20, step=5, help="Price increase per item", format="%d%%")
     else:
-        max_price = st.sidebar.slider("Price Increase for for Tarrif:", 0, 50, st.session_state.user_p, step=5, help="Price increase per item", format="%d%%")
+        max_price = st.sidebar.slider("Price Increase for Tariff:", 0, 50, st.session_state.user_p, step=5, help="Price increase per item", format="%d%%")
+
+    # Tariff input
+    current_tariff = st.sidebar.number_input(
+        "Current Tariff (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5
+    )
+
+    # Margin constraint in %
+    max_margin_impact_pct = st.sidebar.number_input(
+        "Maximum Margin Impact (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5,
+        help="Maximum allowed gain/loss in total revenue as a percent of baseline revenue"
+    )
 
     if st.sidebar.button("Calculate", on_click=callback1):
         with st.spinner("Please Wait..."):
-            user_price = np.ones(num_items) * (max_price / 100)  # % increase
-            st.session_state.sim = simulate_price_increase(user_price, e, bp, bq)
-            st.session_state.user_p = max_price
+            user_price = np.ones(num_items) * (max_price / 100)
+            sim_result = simulate_price_increase(user_price, e, bp, bq)
 
-    if st.session_state.btn2:
+            baseline_revenue = sim_result[0]
+            margin_gain = sim_result[4]
+            margin_impact_pct = (margin_gain / baseline_revenue) * 100
+
+            if abs(margin_impact_pct) > max_margin_impact_pct:
+                st.warning(f"Scenario exceeds the allowed margin impact of {max_margin_impact_pct:.1f}%. "
+                           f"Actual impact: {margin_impact_pct:.1f}%. Try reducing the price increase.")
+                st.stop()
+            else:
+                st.session_state.sim = sim_result
+                st.session_state.user_p = max_price
+
+    if st.session_state.btn2 and st.session_state.sim != '':
         panel1 = st.container()
         panel2 = st.container()
 
-        baseline_revenue = st.session_state.sim[0]
-        sim_revenue = st.session_state.sim[1]
-        baseline_qty = st.session_state.sim[2]
-        new_qty = st.session_state.sim[3]
-        investment = st.session_state.sim[4]
-        new_price = st.session_state.sim[5]
+        baseline_revenue, sim_revenue, baseline_qty, new_qty, investment, new_price = st.session_state.sim
 
         with panel1:
             col1, col2, col3 = st.columns(3)
             col1.metric(label="Baseline Revenue", value=f"${round(baseline_revenue)}")
             col2.metric(label="Simulated Revenue", value=f"${round(sim_revenue)}")
-            col3.metric(label="Revenue Change", value=f"${round(sim_revenue - baseline_revenue)}", delta=f"{round(((sim_revenue / baseline_revenue) - 1) * 100, 1)}%")
+            col3.metric(
+                label="Revenue Change",
+                value=f"${round(sim_revenue - baseline_revenue)}",
+                delta=f"{round(((sim_revenue / baseline_revenue) - 1) * 100, 1)}%"
+            )
 
         with panel2:
             col1, col2, col3 = st.columns(3)
             col1.metric(label="Baseline Qty", value=f"{round(baseline_qty)}")
             col2.metric(label="Simulated Qty", value=f"{round(new_qty)}")
-            col3.metric(label="% Qty Change", value=f"{round(new_qty - baseline_qty)}", delta=f"{round(((new_qty / baseline_qty) - 1) * 100, 1)}%")
+            col3.metric(
+                label="% Qty Change",
+                value=f"{round(new_qty - baseline_qty)}",
+                delta=f"{round(((new_qty / baseline_qty) - 1) * 100, 1)}%"
+            )
 
         st.subheader(f"Revenue Change from {st.session_state.user_p}% Price Increase: ${round(investment)}")
+        st.markdown(f"**Current Tariff:** {current_tariff:.1f}%")
+        st.markdown(f"**Margin Impact:** {round((investment / baseline_revenue) * 100, 2)}%")
 
         st.markdown("#### Item Price Change")
         chart_data_2 = pd.DataFrame({
