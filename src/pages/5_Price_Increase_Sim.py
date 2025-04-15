@@ -106,17 +106,25 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
 
             col3.metric("Margin Δ (%)", f"{((new_margin - base_margin)/base_margin)*100:.2f}%")
             col3.metric("Unit Cost (w/ Tariff)", f"${bc_tariff.mean():.2f}")
-            # --- Per-Item Margin Summary ---
-            st.markdown("### 🧾 Item-Level Margin Report")
+           # --- Per-Item Margin Summary with Percentages ---
+            st.markdown("### 🧾 Item-Level Margin Report (w/ % Margins)")
+            
+            # Adjusted unit cost with tariff
+            bc_tariff = bc * (1 + tariff_pct / 100)
             
             # Original values
             original_df = pd.DataFrame({
                 'ITEM': items,
                 'Unit Price (Before)': bp,
-                'Unit Cost (Before)': bc * (1 + tariff_pct / 100),
-                'Unit Margin (Before)': bp - (bc * (1 + tariff_pct / 100)),
+                'Unit Cost (Before)': bc_tariff,
+                'Unit Margin (Before)': bp - bc_tariff,
                 'Forecast Units': bq
             })
+            original_df['Unit Margin % (Before)'] = np.where(
+                original_df['Unit Price (Before)'] != 0,
+                (original_df['Unit Margin (Before)'] / original_df['Unit Price (Before)']) * 100,
+                np.nan
+            )
             
             # New values
             new_df = pd.DataFrame({
@@ -126,33 +134,46 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
                 'Unit Margin (After)': new_price - bc_tariff,
                 'Adj Units': new_qty
             })
+            new_df['Unit Margin % (After)'] = np.where(
+                new_df['Unit Price (After)'] != 0,
+                (new_df['Unit Margin (After)'] / new_df['Unit Price (After)']) * 100,
+                np.nan
+            )
             
-            # Merge + calculate margin impact
+            # Merge & compute totals
             margin_df = pd.merge(original_df, new_df, on='ITEM')
             margin_df['Total Margin (Before)'] = margin_df['Unit Margin (Before)'] * margin_df['Forecast Units']
             margin_df['Total Margin (After)'] = margin_df['Unit Margin (After)'] * margin_df['Adj Units']
             
-            # Order columns nicely
+            # Format & display
             columns_order = [
                 'ITEM',
-                'Unit Price (Before)', 'Unit Cost (Before)', 'Unit Margin (Before)', 'Forecast Units', 'Total Margin (Before)',
-                'Unit Price (After)', 'Unit Cost (After)', 'Unit Margin (After)', 'Adj Units', 'Total Margin (After)'
+                'Unit Price (Before)', 'Unit Cost (Before)', 'Unit Margin (Before)', 'Unit Margin % (Before)', 'Forecast Units', 'Total Margin (Before)',
+                'Unit Price (After)', 'Unit Cost (After)', 'Unit Margin (After)', 'Unit Margin % (After)', 'Adj Units', 'Total Margin (After)'
             ]
             margin_df = margin_df[columns_order]
-            
-            # Round values for readability
             margin_df = margin_df.round(2)
             
-            # Display in Streamlit
             st.dataframe(margin_df, use_container_width=True)
             
-            # Optional: allow download
+            # Optional: Totals Summary
+            total_before = margin_df['Total Margin (Before)'].sum()
+            total_after = margin_df['Total Margin (After)'].sum()
+            avg_margin_pct_before = (total_before / (bp * bq).sum()) * 100
+            avg_margin_pct_after = (total_after / (new_price * new_qty).sum()) * 100
+            
+            st.markdown("### 📊 Summary")
+            st.markdown(f"- **Total Margin (Before):** ${total_before:,.2f} ({avg_margin_pct_before:.2f}%)")
+            st.markdown(f"- **Total Margin (After):** ${total_after:,.2f} ({avg_margin_pct_after:.2f}%)")
+            
+            # Download option
             st.download_button(
                 label="Download Margin Report",
                 data=margin_df.to_csv(index=False).encode("utf-8"),
                 file_name="item_margin_report.csv",
                 mime="text/csv"
             )
+
 
 
             # --- Simulated Weekly Demand ---
