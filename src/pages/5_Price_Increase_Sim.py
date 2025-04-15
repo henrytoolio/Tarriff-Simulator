@@ -149,7 +149,7 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
             columns_order = [
                 'ITEM',
                 'Unit Price (Before)', 'Unit Price (After)', 'Unit Cost (Before)', 'Unit Cost (After)', 'Unit Margin (Before)', 'Unit Margin (After)', 'Unit Margin % (Before)',  
-                'Forecast Units', 'Adj Units', 'Total Margin (Before)', 'Total Margin (After)'
+                'Unit Margin % (After)',  'Forecast Units', 'Adj Units', 'Total Margin (Before)', 'Total Margin (After)'
             ]
             margin_df = margin_df[columns_order]
             margin_df = margin_df.round(2)
