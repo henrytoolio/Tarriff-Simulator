@@ -4,16 +4,26 @@ import pandas as pd
 import altair as alt
 
 @st.cache_data
-def simulate_price_increase(x, e, bp, bq):
-    perc_qty_change = np.multiply(e, x)  # elasticity * % price change
-    new_price = bp + np.multiply(bp, x)  # increased price
-    new_qty = bq + np.multiply(perc_qty_change, bq)  # expected demand drop
+def simulate_price_increase(x, e, bp, bq, bc, tariff_pct):
+    perc_qty_change = np.multiply(e, x)
+    new_price = bp + np.multiply(bp, x)
+    new_qty = bq + np.multiply(perc_qty_change, bq)
+
+    # Apply tariff to cost
+    new_cost = bc * (1 + tariff_pct / 100)
+
+    # Revenue and baseline revenue
     sim_revenue = np.dot(new_price, new_qty)
     baseline_revenue = np.dot(bp, bq)
-    baseline_qty = sum(bq)
-    sim_qty = sum(new_qty)
-    margin_gain = np.dot(new_price - bp, new_qty)  # revenue gain from price increase
-    return [baseline_revenue, sim_revenue, baseline_qty, sim_qty, margin_gain, new_price]
+
+    # Margin calculations
+    sim_margin = np.dot(new_price - new_cost, new_qty)
+    baseline_margin = np.dot(bp - bc, bq)
+
+    baseline_qty = np.sum(bq)
+    sim_qty = np.sum(new_qty)
+
+    return [baseline_revenue, sim_revenue, baseline_qty, sim_qty, sim_margin, baseline_margin, new_price, new_cost]
 
 # Initialize session state variables
 if 'btn2' not in st.session_state:
@@ -28,7 +38,6 @@ if 'user_p' not in st.session_state:
 def callback1():
     st.session_state['btn2'] = True
 
-# Only proceed if previous steps are completed
 if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in st.session_state:
     st.title("Simulation Results")
 
@@ -36,34 +45,32 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
 
     e = st.session_state.elastic['Elasticities'].to_numpy()
     bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()
+    bc = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].UNIT_COST.to_numpy()
     bq = st.session_state.forecast.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
     num_items = e.size
 
-    # Price increase slider
     if st.session_state.user_p == '':
         max_price = st.sidebar.slider("Price Increase for Tariff:", 0, 50, 20, step=5, help="Price increase per item", format="%d%%")
     else:
         max_price = st.sidebar.slider("Price Increase for Tariff:", 0, 50, st.session_state.user_p, step=5, help="Price increase per item", format="%d%%")
 
-    # Tariff input
     current_tariff = st.sidebar.number_input(
         "Current Tariff (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5
     )
 
-    # Margin constraint in %
     max_margin_impact_pct = st.sidebar.number_input(
         "Maximum Margin Impact (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5,
-        help="Maximum allowed gain/loss in total revenue as a percent of baseline revenue"
+        help="Maximum allowed gain/loss in total margin as a percent of baseline margin"
     )
 
     if st.sidebar.button("Calculate", on_click=callback1):
         with st.spinner("Please Wait..."):
             user_price = np.ones(num_items) * (max_price / 100)
-            sim_result = simulate_price_increase(user_price, e, bp, bq)
+            sim_result = simulate_price_increase(user_price, e, bp, bq, bc, current_tariff)
 
-            baseline_revenue = sim_result[0]
-            margin_gain = sim_result[4]
-            margin_impact_pct = (margin_gain / baseline_revenue) * 100
+            sim_margin = sim_result[4]
+            baseline_margin = sim_result[5]
+            margin_impact_pct = ((sim_margin - baseline_margin) / baseline_margin) * 100
 
             if abs(margin_impact_pct) > max_margin_impact_pct:
                 st.warning(f"Scenario exceeds the allowed margin impact of {max_margin_impact_pct:.1f}%. "
@@ -77,7 +84,7 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
         panel1 = st.container()
         panel2 = st.container()
 
-        baseline_revenue, sim_revenue, baseline_qty, new_qty, investment, new_price = st.session_state.sim
+        baseline_revenue, sim_revenue, baseline_qty, new_qty, sim_margin, baseline_margin, new_price, new_cost = st.session_state.sim
 
         with panel1:
             col1, col2, col3 = st.columns(3)
@@ -99,9 +106,9 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
                 delta=f"{round(((new_qty / baseline_qty) - 1) * 100, 1)}%"
             )
 
-        st.subheader(f"Revenue Change from {st.session_state.user_p}% Price Increase: ${round(investment)}")
+        st.subheader(f"Margin Change from {st.session_state.user_p}% Price Increase: ${round(sim_margin - baseline_margin)}")
         st.markdown(f"**Current Tariff:** {current_tariff:.1f}%")
-        st.markdown(f"**Margin Impact:** {round((investment / baseline_revenue) * 100, 2)}%")
+        st.markdown(f"**Margin Impact:** {round(margin_impact_pct, 2)}%")
 
         st.markdown("#### Item Price Change")
         chart_data_2 = pd.DataFrame({
