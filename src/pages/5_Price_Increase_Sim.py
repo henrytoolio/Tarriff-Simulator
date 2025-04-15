@@ -57,7 +57,7 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
         price_increase_pct = optimize_price_for_revenue(e, bp, bq, bc, tariff_pct, max_margin_loss_pct)
         st.success(f"Recommended Price Increase: {price_increase_pct:.2f}%")
 
-        # Base values
+        # Showing Margin
         new_price = bp + bp * (price_increase_pct / 100)
         new_qty = bq + bq * e * (price_increase_pct / 100)
         new_cost = bc * (1 + tariff_pct / 100)
@@ -69,6 +69,15 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
         st.metric("Original Total Margin", f"${base_margin_total:,.2f}")
         st.metric("New Total Margin", f"${new_margin_total:,.2f}")
         st.metric("Change in Margin (%)", f"{((new_margin_total - base_margin_total) / base_margin_total) * 100:.2f}%")
+
+        base_revenue = np.dot(bp, bq)
+        new_revenue = np.dot(new_price, new_qty)
+
+        st.markdown("### 📈 Revenue Summary")
+        st.metric("Original Total Revenue", f"${base_revenue:,.2f}")
+        st.metric("New Total Revenue", f"${new_revenue:,.2f}")
+        st.metric("Change in Revenue (%)", f"{((new_revenue - base_revenue) / base_revenue) * 100:.2f}%")
+
 
 
         # Simulate weekly demand after applying optimal price increase
