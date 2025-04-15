@@ -3,134 +3,95 @@ import numpy as np
 import pandas as pd
 import altair as alt
 
-@st.cache_data
-def simulate_price_increase(x, e, bp, bq, bc, tariff_pct):
-    perc_qty_change = np.multiply(e, x)
-    new_price = bp + np.multiply(bp, x)
-    new_qty = bq + np.multiply(perc_qty_change, bq)
+# Binary search optimizer
+def find_min_price_increase(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, precision=0.001):
+    low, high = 0, 1  # search between 0% and 100% price increase
+    new_price = bp.copy()
+    while high - low > precision:
+        mid = (low + high) / 2
+        x = np.ones_like(bp) * mid
 
-    # Apply tariff to cost
-    new_cost = bc * (1 + tariff_pct / 100)
+        # New price and quantity
+        new_price = bp + (bp * x)
+        new_qty = bq + (bq * e * x)
 
-    # Revenue and baseline revenue
-    sim_revenue = np.dot(new_price, new_qty)
-    baseline_revenue = np.dot(bp, bq)
+        # New cost with tariff
+        new_cost = bc * (1 + tariff_pct / 100)
 
-    # Margin calculations
-    sim_margin = np.dot(new_price - new_cost, new_qty)
-    baseline_margin = np.dot(bp - bc, bq)
+        sim_margin = np.dot(new_price - new_cost, new_qty)
+        baseline_margin = np.dot(bp - bc, bq)
 
-    baseline_qty = np.sum(bq)
-    sim_qty = np.sum(new_qty)
+        margin_change_pct = ((sim_margin - baseline_margin) / baseline_margin) * 100
 
-    return [baseline_revenue, sim_revenue, baseline_qty, sim_qty, sim_margin, baseline_margin, new_price, new_cost]
+        if margin_change_pct >= -max_margin_loss_pct:
+            high = mid
+        else:
+            low = mid
 
-# Initialize session state variables
-if 'btn2' not in st.session_state:
-    st.session_state['btn2'] = False
+    return high * 100, new_price, new_cost, sim_margin, baseline_margin  # return % price increase
 
-if 'sim' not in st.session_state:
-    st.session_state.sim = ''
-
-if 'user_p' not in st.session_state:
-    st.session_state.user_p = ''
-
-def callback1():
-    st.session_state['btn2'] = True
+# Streamlit UI
+st.title("📈 Price Recommendation Tool")
 
 if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in st.session_state:
-    st.title("Simulation Results")
-
     df = st.session_state.df
 
+    # Extract data
+    latest_df = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()]
+    bp = latest_df["PRICE"].to_numpy()
+    bc = latest_df["Unit_cost"].to_numpy()
     e = st.session_state.elastic['Elasticities'].to_numpy()
-    bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()
-    bc = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()]["Unit_cost"].to_numpy()
     bq = st.session_state.forecast.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
-    num_items = e.size
+    items = st.session_state.elastic['ITEM']
 
-    if st.session_state.user_p == '':
-        max_price = st.sidebar.slider("Price Increase for Tariff:", 0, 50, 20, step=5, help="Price increase per item", format="%d%%")
-    else:
-        max_price = st.sidebar.slider("Price Increase for Tariff:", 0, 50, st.session_state.user_p, step=5, help="Price increase per item", format="%d%%")
+    # Inputs
+    st.sidebar.markdown("### 💡 Inputs")
+    tariff_pct = st.sidebar.number_input("Tariff Increase (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5)
+    max_margin_loss_pct = st.sidebar.number_input("Maximum Allowed Margin Loss (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5)
 
-    current_tariff = st.sidebar.number_input(
-        "Current Tariff (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5
-    )
+    if st.sidebar.button("Recommend Prices"):
+        with st.spinner("Optimizing price increase..."):
+            price_increase_pct, new_price, new_cost, sim_margin, baseline_margin = find_min_price_increase(
+                e, bp, bq, bc, tariff_pct, max_margin_loss_pct
+            )
 
-    max_margin_impact_pct = st.sidebar.number_input(
-        "Maximum Margin Impact (%)", min_value=0.0, max_value=100.0, value=5.0, step=0.5,
-        help="Maximum allowed gain/loss in total margin as a percent of baseline margin"
-    )
-
-    if st.sidebar.button("Calculate", on_click=callback1):
-        with st.spinner("Please Wait..."):
-            user_price = np.ones(num_items) * (max_price / 100)
-            sim_result = simulate_price_increase(user_price, e, bp, bq, bc, current_tariff)
-
-            sim_margin = sim_result[4]
-            baseline_margin = sim_result[5]
+            sim_revenue = np.dot(new_price, bq)
+            baseline_revenue = np.dot(bp, bq)
+            revenue_change_pct = ((sim_revenue - baseline_revenue) / baseline_revenue) * 100
             margin_impact_pct = ((sim_margin - baseline_margin) / baseline_margin) * 100
 
-            if abs(margin_impact_pct) > max_margin_impact_pct:
-                st.warning(f"Scenario exceeds the allowed margin impact of {max_margin_impact_pct:.1f}%. "
-                           f"Actual impact: {margin_impact_pct:.1f}%. Try reducing the price increase.")
-                st.stop()
-            else:
-                st.session_state.sim = sim_result
-                st.session_state.user_p = max_price
-
-    if st.session_state.btn2 and st.session_state.sim != '':
-        panel1 = st.container()
-        panel2 = st.container()
-
-        baseline_revenue, sim_revenue, baseline_qty, new_qty, sim_margin, baseline_margin, new_price, new_cost = st.session_state.sim
-
-        with panel1:
+            st.success(f"📊 Recommended Price Increase: **{price_increase_pct:.2f}%**")
             col1, col2, col3 = st.columns(3)
-            col1.metric(label="Baseline Revenue", value=f"${round(baseline_revenue)}")
-            col2.metric(label="Simulated Revenue", value=f"${round(sim_revenue)}")
-            col3.metric(
-                label="Revenue Change",
-                value=f"${round(sim_revenue - baseline_revenue)}",
-                delta=f"{round(((sim_revenue / baseline_revenue) - 1) * 100, 1)}%"
-            )
+            col1.metric("Baseline Margin", f"${round(baseline_margin)}")
+            col2.metric("Simulated Margin", f"${round(sim_margin)}")
+            col3.metric("Margin Change", f"${round(sim_margin - baseline_margin)}", delta=f"{margin_impact_pct:.2f}%")
 
-        with panel2:
-            col1, col2, col3 = st.columns(3)
-            col1.metric(label="Baseline Qty", value=f"{round(baseline_qty)}")
-            col2.metric(label="Simulated Qty", value=f"{round(new_qty)}")
-            col3.metric(
-                label="% Qty Change",
-                value=f"{round(new_qty - baseline_qty)}",
-                delta=f"{round(((new_qty / baseline_qty) - 1) * 100, 1)}%"
-            )
+            col4, col5, col6 = st.columns(3)
+            col4.metric("Baseline Revenue", f"${round(baseline_revenue)}")
+            col5.metric("Simulated Revenue", f"${round(sim_revenue)}")
+            col6.metric("Revenue Change", f"${round(sim_revenue - baseline_revenue)}", delta=f"{revenue_change_pct:.2f}%")
 
-        st.subheader(f"Margin Change from {st.session_state.user_p}% Price Increase: ${round(sim_margin - baseline_margin)}")
-        st.markdown(f"**Current Tariff:** {current_tariff:.1f}%")
-        st.markdown(f"**Margin Impact:** {round(margin_impact_pct, 2)}%")
+            st.subheader("📋 Item-Level Summary")
+            results_df = pd.DataFrame({
+                "Item": items,
+                "Base Price": np.round(bp, 2),
+                "New Price": np.round(new_price, 2),
+                "Cost w/ Tariff": np.round(new_cost, 2)
+            })
 
-        st.markdown("#### Item Price Change")
-        chart_data_2 = pd.DataFrame({
-            'Item': st.session_state.elastic['ITEM'],
-            'Base Price': np.around(bp, 2),
-            'New Price': np.around(new_price, 2)
-        })
+            st.dataframe(results_df, use_container_width=True)
 
-        chart2 = alt.Chart(chart_data_2.melt('Item')).mark_bar().encode(
-            alt.Y('variable:N', axis=alt.Axis(title='')),
-            alt.X('value:Q', axis=alt.Axis(title='Price', grid=False, format='$.2f')),
-            color=alt.Color('variable:N'),
-            row=alt.Row('Item:O', header=alt.Header(labelAngle=0, labelAlign='left'))
-        ).configure_view(stroke='transparent')
+            chart = alt.Chart(results_df.melt('Item')).mark_bar().encode(
+                y=alt.Y('variable:N', title=''),
+                x=alt.X('value:Q', title='USD', axis=alt.Axis(format='$')),
+                color='variable:N',
+                row=alt.Row('Item:N', header=alt.Header(labelAngle=0, labelAlign='left'))
+            ).configure_view(stroke='transparent')
 
-        st.altair_chart(chart2, theme="streamlit", use_container_width=True)
+            st.altair_chart(chart, use_container_width=True)
 
-        st.download_button(
-            label="Download",
-            data=chart_data_2.to_csv(index=False).encode('utf-8'),
-            file_name='scenario_price_change.csv',
-            mime='text/csv',
-        )
+            st.download_button("Download Results", data=results_df.to_csv(index=False).encode("utf-8"),
+                               file_name="price_recommendations.csv", mime="text/csv")
+
 else:
-    st.title(":orange[Finish Previous Tabs!]")
+    st.warning("🚨 Please complete the earlier steps first (upload data, run elasticity & forecast tabs).")
