@@ -12,24 +12,27 @@ def simulate_weekly_demand(df_forecast, elasticity_dict, price_increase_pct):
     df['Adj_Units'] = df['UNIT_FORECAST'] * df['Adj_Factor']
     return df
 
-# Binary search to find min price increase to meet margin constraint
-def optimize_price_increase(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, precision=0.001):
-    low, high = 0, 1
-    while high - low > precision:
-        mid = (low + high) / 2
-        x = np.ones_like(bp) * mid
+def optimize_price_for_revenue(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, step=0.5):
+    best_revenue = -np.inf
+    best_increase = 0
+    base_margin = np.dot(bp - bc, bq)
+
+    for pct in np.arange(0, 100 + step, step):
+        x = np.ones_like(bp) * (pct / 100)
         new_price = bp + bp * x
         new_qty = bq + bq * e * x
         new_cost = bc * (1 + tariff_pct / 100)
+        
         sim_margin = np.dot(new_price - new_cost, new_qty)
-        base_margin = np.dot(bp - bc, bq)
         margin_delta_pct = ((sim_margin - base_margin) / base_margin) * 100
-        if margin_delta_pct >= -max_margin_loss_pct:
-            high = mid
-        else:
-            low = mid
-    return high * 100
 
+        if margin_delta_pct >= -max_margin_loss_pct:
+            revenue = np.dot(new_price, new_qty)
+            if revenue > best_revenue:
+                best_revenue = revenue
+                best_increase = pct
+
+    return best_increase
 # Streamlit app
 st.title("📊 Price Recommendation with Weekly Forecast Simulation")
 
