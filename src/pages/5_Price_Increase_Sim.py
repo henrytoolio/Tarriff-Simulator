@@ -54,7 +54,7 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
     max_margin_loss_pct = st.sidebar.number_input("Max Margin Loss (%)", 0.0, 100.0, 5.0, 0.5)
 
     if st.sidebar.button("Recommend Price Increase"):
-        price_increase_pct = optimize_price_increase(e, bp, bq, bc, tariff_pct, max_margin_loss_pct)
+        price_increase_pct = optimize_price_for_revenue(e, bp, bq, bc, tariff_pct, max_margin_loss_pct)
         st.success(f"Recommended Price Increase: {price_increase_pct:.2f}%")
 
         # Simulate weekly demand after applying optimal price increase
