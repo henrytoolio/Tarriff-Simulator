@@ -16,11 +16,13 @@ def simulate_weekly_demand(df_forecast, elasticity_dict, price_increase_pct):
 # --- Optimizer: Maximize Profit under Margin Constraint ---
 def optimize_price_for_profit(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, step=0.5, max_price_increase_pct=50):
     best_profit = -np.inf
-    best_increase = 0
-    bc_new = bc * (1 + tariff_pct / 100)
+    best_increase = None
+
+    # Apply tariff cost to both base and new cost for consistent comparison
+    bc_tariff = bc * (1 + tariff_pct / 100)
 
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc, bq)
+    base_cost = np.dot(bc_tariff, bq)  # updated!
     base_margin = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
@@ -28,15 +30,19 @@ def optimize_price_for_profit(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, st
         new_price = bp * (1 + x)
         new_qty = bq * (new_price / bp) ** e
         new_revenue = np.dot(new_price, new_qty)
-        new_cost = np.dot(bc_new, new_qty)
+        new_cost = np.dot(bc_tariff, new_qty)
         new_margin = new_revenue - new_cost
         margin_delta_pct = ((new_margin - base_margin) / base_margin) * 100
 
+        # Enforce constraint: don't allow more than max margin loss
         if margin_delta_pct >= -max_margin_loss_pct:
-            profit = new_margin  # profit = revenue - cost
-            if profit > best_profit:
-                best_profit = profit
+            if new_margin > best_profit:
+                best_profit = new_margin
                 best_increase = pct
+
+    # If nothing satisfies the margin constraint, return a warning
+    if best_increase is None:
+        return None  # or fallback to minimal increase
 
     return best_increase
 
@@ -69,11 +75,16 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
     max_price_increase_pct = st.sidebar.number_input("Max Price Increase Cap (%)", 0.0, 100.0, 50.0, 1.0)
 
     if st.sidebar.button("Recommend Price Increase"):
-        price_increase_pct = optimize_price_for_profit(
-            e, bp, bq, bc, tariff_pct, max_margin_loss_pct,
-            step=0.5, max_price_increase_pct=max_price_increase_pct
-        )
-        st.success(f"✅ Recommended Price Increase: **{price_increase_pct:.2f}%**")
+      price_increase_pct = optimize_price_for_profit(
+        e, bp, bq, bc, tariff_pct, max_margin_loss_pct,
+        step=0.5, max_price_increase_pct=max_price_increase_pct)
+
+        if price_increase_pct is None:
+            st.error("❌ No valid price increase could meet the margin constraint. Try increasing the allowed margin loss or cap.")
+        else:
+        # Proceed with your simulation and profit calculations
+    ...
+
 
         # Recalculate outputs using best increase
         x = price_increase_pct / 100
