@@ -1,7 +1,10 @@
+# Force NumPy first
+numpy==1.26.4
+
+# Now the rest
 streamlit
 pandas
 altair
-numpy==1.26.4
 prophet==1.1.4
 setuptools>=67.0.0
 wheel
