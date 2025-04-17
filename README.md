@@ -3,19 +3,19 @@
 ## App is designed to provide optimal pricing strategy for a given budget
 
 ## Getting Started:
-Upload file having weekly time series data containing item sold quantity and selling price. Any relevant feature can also be included to improve price elasticities and demand forecast prediction
+Upload file having weekly time series data containing item sold quantity, selling price and cost. Any relevant feature can also be included to improve price elasticities and demand forecast prediction
 
 The CSV file must have following columns (ITEM - DATE are composite primary key columns):
 - *ITEM*: Item description (string) 
 - *DATE*: Week start/end date (MM/DD/YYYY) 
 - *UNITS*: Item volume for the week (float) 
 - *PRICE*: Selling price of the item (float)
+- *COST*: Cost of the item (float)
 
 ## App Tab Details:
 - **Demand Forecast Tab**: Uses uploaded weekly historical sales data to create a 4 weeks of demand forecast, taking into account factors such as seasonality and trends
 - **Price Elasticities Tab**: Estimates how changes in price will affect demand for a given item
-- **Price Simulator Tab**: Simulate 'What-If' price change scenarios impact on demand and budget requirement
-- **Price Optimization Tab**: Leverage Demand Forecast, Available Budget and Price Elasticities to recommend optimal prices to maximize revenue
+- **Price Tarriff Simiulator**: Simulate 'What-If' price change scenarios where user can input tarrif amount, max margin change, and max price change
 
 ## Local Installation:
  Run following commands[^1]:
@@ -45,6 +45,3 @@ Sample Data is present in folder to get started
 
  [^1]: Prerequisite: Docker and Git installation 
  
- ## Pricing Tool User Guide
-  - Follow instructions provided at this link:<br/>
- https://docs.google.com/document/d/1ilAjzA3KHGU7Msj1p2QLS7czVynkxiwFLad2OMlGcRk/edit?usp=sharing
