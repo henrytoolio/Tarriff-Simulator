@@ -14,32 +14,39 @@ def simulate_weekly_demand(df_forecast, elasticity_dict, price_increase_pct):
     return df
 
 # --- Optimizer: Maximize Profit under Margin Constraint ---
-def optimize_price_for_profit(e, bp, bq, bc, tariff_pct, max_margin_loss_pct, step=0.5, max_price_increase_pct=50):
+def optimize_price_for_profit(
+    e, bp, bq, bc, tariff_pct, max_margin_loss_pct,
+    step=0.5, max_price_increase_pct=50
+):
     best_profit = -np.inf
     best_increase = None
 
-    # Consistent cost basis: apply tariff to base & new margin calculation
+    # Apply tariff to base and new cost
     bc_tariff = bc * (1 + tariff_pct / 100)
 
+    # Compute base profit and margin
     base_revenue = np.dot(bp, bq)
     base_cost = np.dot(bc_tariff, bq)
-    base_margin = base_revenue - base_cost
+    base_profit = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
         x = pct / 100
         new_price = bp * (1 + x)
-        new_qty = bq * (new_price / bp) ** e
+        new_qty = bq * (new_price / bp) ** e  # apply elasticity
         new_revenue = np.dot(new_price, new_qty)
         new_cost = np.dot(bc_tariff, new_qty)
-        new_margin = new_revenue - new_cost
-        margin_delta_pct = ((new_margin - base_margin) / base_margin) * 100
+        new_profit = new_revenue - new_cost
+
+        # Margin change vs base (with same cost basis)
+        margin_delta_pct = ((new_profit - base_profit) / base_profit) * 100
 
         if margin_delta_pct >= -max_margin_loss_pct:
-            if new_margin > best_profit:
-                best_profit = new_margin
+            if new_profit > best_profit:
+                best_profit = new_profit
                 best_increase = pct
 
-    return best_increase  # can be None if no valid solution
+    return best_increase
+
 
 # --- Streamlit App ---
 st.title("📈 Price Optimization: Maximize Profit Under Margin Constraint")
