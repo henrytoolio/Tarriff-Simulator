@@ -99,6 +99,9 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
             base_margin = base_revenue - base_cost
             base_profit = base_revenue - base_cost
 
+            new_price = bp * (1 + x)
+            new_qty = bq * (new_price / bp) ** e
+            new_revenue = np.dot(new_price, new_qty)  
             new_profit = new_revenue - new_cost
             new_cost = np.dot(bc_tariff, new_qty)
             new_margin = new_revenue - new_cost
