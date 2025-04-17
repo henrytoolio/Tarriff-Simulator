@@ -11,13 +11,13 @@ def get_data(file):
     
 
 st.set_page_config(
-    page_title="Price Optimization App",
+    page_title="Tarriff Pricing Optimizer",
     menu_items={
-        'About': "# MSDS 498 CAPSTONE PROJECT: Pricing Optimization "
+        'About': "# Tarriff Price Optimizer "
     }
 )
 
-st.title("Price Optimization App")
+st.title("Tarriff Pricing Optimizer")
 st.caption("App is designed to allow users to optimize pricing based on tarrif increases" )
 st.markdown("### Getting Started:")
 st.markdown(":orange[Upload file having weekly time series data containing item sold quantity, selling price and unit cost. Any relevant feature can also be included to improve price elasticities and demand forecast prediction]")
