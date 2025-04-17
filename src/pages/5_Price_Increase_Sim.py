@@ -52,7 +52,8 @@ def optimize_price_for_profit(
     return best_increase if best_increase is not None else fallback_increase
 
 # --- Streamlit App ---
-st.title("\ud83d\udcc8 Price Optimization: Maximize Profit Under Margin Constraint")
+st.set_page_config(page_title="Price Optimization", layout="wide")
+st.title("📈 Price Optimization: Maximize Profit Under Margin Constraint")
 
 if st.session_state.get('df') is not None and st.session_state.get('elastic') is not None and st.session_state.get('forecast') is not None:
     df = st.session_state.df
@@ -78,7 +79,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
 
     # --- Elasticity Curve Toggle ---
     if st.sidebar.checkbox("Show Elasticity Curves"):
-        st.subheader("\ud83d\udd04 Elasticity Curves by Product")
+        st.subheader("🔄 Elasticity Curves by Product")
 
         # Sort items by elasticity (most to least elastic)
         elasticity_df = pd.DataFrame({"ITEM": items, "Elasticity": e})
@@ -90,7 +91,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
             default=elasticity_df['ITEM'].head(5).tolist()
         )
 
-        price_range = np.linspace(0.5, 2.0, 50)  # Multiplier on base price
+        price_range = np.linspace(0.5, 2.0, 50)
         curves = []
         for item in selected_items:
             idx = np.where(items == item)[0][0]
@@ -122,7 +123,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
             step=0.5, max_price_increase_pct=max_price_increase_pct
         )
 
-        st.success(f"\u2705 Recommended Price Increase: **{price_increase_pct:.2f}%**")
+        st.success(f"✅ Recommended Price Increase: **{price_increase_pct:.2f}%**")
 
         x = price_increase_pct / 100
         new_price = bp * (1 + x)
@@ -139,7 +140,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
 
         profit_delta = new_profit - base_profit
 
-        st.markdown("### \ud83d\udcb0 Financial Summary")
+        st.markdown("### 💰 Financial Summary")
         col1, col2, col3 = st.columns(3)
         col1.metric("Revenue (Before)", f"${base_revenue:,.2f}")
         col1.metric("Revenue (After)", f"${new_revenue:,.2f}", f"{((new_revenue - base_revenue)/base_revenue)*100:.2f}%")
@@ -147,11 +148,11 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
         col2.metric("Profit (Before)", f"${base_profit:,.2f}")
         col2.metric("Profit (After)", f"${new_profit:,.2f}", f"{profit_delta/base_profit*100:.2f}%")
 
-        col3.metric("Margin \u0394 (%)", f"{((new_profit - base_profit)/base_profit)*100:.2f}%")
+        col3.metric("Margin Δ (%)", f"{((new_profit - base_profit)/base_profit)*100:.2f}%")
         col3.metric("Unit Cost (w/ Tariff)", f"${bc_tariff.mean():.2f}")
 
         weekly_sim = simulate_weekly_demand(forecast_df, elasticity_dict, price_increase_pct)
-        st.subheader("\ud83d\uddd3\ufe0f Simulated Weekly Demand After Price Increase")
+        st.subheader("📅 Simulated Weekly Demand After Price Increase")
         st.dataframe(weekly_sim[['ITEM', 'DATE', 'UNIT_FORECAST', 'Adj_Units']], use_container_width=True)
 
         chart = alt.Chart(weekly_sim).mark_line(point=True).encode(
@@ -163,4 +164,4 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
                            file_name="adjusted_weekly_forecast.csv", mime="text/csv")
 
 else:
-    st.warning("\u26a0\ufe0f Please upload your data and run the forecast and elasticity steps first.")
+    st.warning("⚠️ Please upload your data and run the forecast and elasticity steps first.")
