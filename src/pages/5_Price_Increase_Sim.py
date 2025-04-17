@@ -21,23 +21,23 @@ def optimize_price_for_profit(
     best_profit = -np.inf
     best_increase = None
 
-    # Apply tariff to base and new cost
+    # New cost with tariff applied
     bc_tariff = bc * (1 + tariff_pct / 100)
 
-    # Compute base profit and margin
+    # ✅ Base (pre-tariff) values
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc_tariff, bq)
+    base_cost = np.dot(bc, bq)  # ❗️ use original cost
     base_profit = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
         x = pct / 100
         new_price = bp * (1 + x)
-        new_qty = bq * (new_price / bp) ** e  # apply elasticity
+        new_qty = bq * (new_price / bp) ** e
+
         new_revenue = np.dot(new_price, new_qty)
         new_cost = np.dot(bc_tariff, new_qty)
         new_profit = new_revenue - new_cost
 
-        # Margin change vs base (with same cost basis)
         margin_delta_pct = ((new_profit - base_profit) / base_profit) * 100
 
         if margin_delta_pct >= -max_margin_loss_pct:
@@ -46,6 +46,7 @@ def optimize_price_for_profit(
                 best_increase = pct
 
     return best_increase
+
 
 
 # --- Streamlit App ---
@@ -94,10 +95,11 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
             bc_tariff = bc * (1 + tariff_pct / 100)
 
             base_revenue = np.dot(bp, bq)
-            base_cost = np.dot(bc_tariff, bq)
+            base_cost = np.dot(bc, bq)
             base_margin = base_revenue - base_cost
+            base_profit = base_revenue - base_cost
 
-            new_revenue = np.dot(new_price, new_qty)
+            new_profit = new_revenue - new_cost
             new_cost = np.dot(bc_tariff, new_qty)
             new_margin = new_revenue - new_cost
             profit_delta = new_margin - base_margin
