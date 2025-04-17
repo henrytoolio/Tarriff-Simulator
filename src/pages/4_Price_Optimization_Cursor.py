@@ -4,135 +4,221 @@ import pandas as pd
 import altair as alt
 from scipy.optimize import minimize
 
+# --- Simulate Adjusted Demand ---
+def simulate_weekly_demand(df_forecast, elasticity_dict, price_increase_dict):
+    df = df_forecast.copy()
+    df['Elasticity'] = df['ITEM'].map(elasticity_dict)
+    df['Pct_Change'] = df['ITEM'].map(price_increase_dict) / 100
+    df['PRICE'] = df['PRICE'].astype(float)
+    df['Adj_Price'] = df['PRICE'] * (1 + df['Pct_Change'])
+    df['Adj_Units'] = df['UNIT_FORECAST'] * (df['Adj_Price'] / df['PRICE']) ** df['Elasticity']
+    return df
 
-@st.cache_data
-def simulate_price_increase(x, e, bp, bq):
-    perc_qty_change = np.multiply(e, x)  # elasticity * % price change
-    new_price = bp + np.multiply(bp, x)  # increased price
-    new_qty = bq + np.multiply(perc_qty_change, bq)  # expected demand drop
-    sim_revenue = np.dot(new_price, new_qty)
-    baseline_revenue = np.dot(bp, bq)
-    baseline_qty = sum(bq)
-    sim_qty = sum(new_qty)
-    margin_gain = np.dot(new_price - bp, new_qty)  # revenue gain from price increase
-    return [baseline_revenue, sim_revenue, baseline_qty, sim_qty, margin_gain, new_price]
+# --- Optimizer: Maximize Profit considering tariff and elasticity ---
+def optimize_price_for_profit(
+    e, bp, bq, bc, tariff_pct, max_margin_loss_pct,
+    step=0.5, max_price_increase_pct=50
+):
+    # Convert inputs to numpy arrays if they aren't already
+    e = np.array(e)
+    bp = np.array(bp)
+    bq = np.array(bq)
+    bc = np.array(bc)
+    
+    # Calculate base values with tariff
+    bc_tariff = bc * (1 + tariff_pct / 100)
+    base_revenue = np.dot(bp, bq)
+    base_cost = np.dot(bc_tariff, bq)
+    base_profit = base_revenue - base_cost
+    
+    def objective(x):
+        # x is the price increase percentage for each item
+        x = x / 100  # Convert to decimal
+        new_price = bp * (1 + x)
+        new_qty = bq * (new_price / bp) ** e
+        new_revenue = np.dot(new_price, new_qty)
+        new_cost = np.dot(bc_tariff, new_qty)
+        new_profit = new_revenue - new_cost
+        
+        # We want to maximize profit, so minimize negative profit
+        return -new_profit
+    
+    def constraint(x):
+        # Constraint to ensure margin doesn't drop below max_margin_loss_pct
+        x = x / 100
+        new_price = bp * (1 + x)
+        new_qty = bq * (new_price / bp) ** e
+        new_revenue = np.dot(new_price, new_qty)
+        new_cost = np.dot(bc_tariff, new_qty)
+        new_profit = new_revenue - new_cost
+        
+        margin_delta_pct = ((new_profit - base_profit) / base_profit) * 100
+        return margin_delta_pct + max_margin_loss_pct  # Must be >= 0
+    
+    # Initial guess: equal price increases for all items
+    x0 = np.ones(len(e)) * (max_price_increase_pct / 2)
+    
+    # Bounds for each item's price increase
+    bounds = [(0, max_price_increase_pct) for _ in range(len(e))]
+    
+    # Constraints
+    cons = [{'type': 'ineq', 'fun': constraint}]
+    
+    # Optimize
+    result = minimize(
+        objective,
+        x0,
+        bounds=bounds,
+        constraints=cons,
+        method='SLSQP'
+    )
+    
+    if result.success:
+        return result.x
+    else:
+        st.error("Optimization failed. Please try different constraints.")
+        return np.zeros(len(e))
 
-@st.cache_data
-def optimize_margin(x, e, bp, bq):
-    # Convert x from percentage to decimal
-    x = x / 100
-    perc_qty_change = np.multiply(e, x)
-    new_price = bp + np.multiply(bp, x)
-    new_qty = bq + np.multiply(perc_qty_change, bq)
-    margin = np.dot(new_price - bp, new_qty)
-    # We negate margin because we want to maximize it
-    return -margin
+# --- Streamlit App ---
+st.set_page_config(page_title="Price Optimization", layout="wide")
+st.title("📈 Price Optimization: Maximize Profit Under Margin Constraint")
 
-#test
-
-# Session state variables
-if 'btn2' not in st.session_state:
-    st.session_state['btn2'] = False
-
-if 'sim' not in st.session_state:
-    st.session_state.sim = ''
-
-if 'user_p' not in st.session_state:
-    st.session_state.user_p = ''
-
-def callback1():
-    st.session_state['btn2'] = True
-
-if st.session_state.df is not '' and st.session_state.elastic is not '' and st.session_state.forecast is not '':
-    st.title("Price Optimization Results")
-
+if st.session_state.get('df') is not None and st.session_state.get('elastic') is not None and st.session_state.get('forecast') is not None:
     df = st.session_state.df
+    forecast_df = st.session_state.forecast.copy()
+    elasticity = st.session_state.elastic
 
-    e = st.session_state.elastic['Elasticities'].to_numpy()
-    bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()
-    bq = st.session_state.forecast.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
-    num_items = e.size
+    latest_df = df.loc[df.groupby("ITEM")["DATE"].idxmax()]
+    bp = latest_df["PRICE"].astype(float).to_numpy()
+    bc = latest_df["Unit_cost"].astype(float).to_numpy()
+    e_raw = elasticity['Elasticities'].to_numpy()
 
-    # Price increase constraints
-    st.sidebar.markdown("### Optimization Constraints")
-    max_price_increase = st.sidebar.slider("Maximum Price Increase:", 0, 50, 20, step=5, help="Maximum allowed price increase per item", format="%d%%")
-    min_price_increase = st.sidebar.slider("Minimum Price Increase:", 0, 50, 0, step=5, help="Minimum required price increase per item", format="%d%%")
+    e = np.where(e_raw > 0, -e_raw, e_raw)
+    items = elasticity['ITEM'].to_numpy()
+    bq = forecast_df.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
 
-    if st.sidebar.button("Optimize Prices", on_click=callback1):
-        with st.spinner("Optimizing prices for maximum margin..."):
-            # Initial guess: equal price increases for all items
-            x0 = np.ones(num_items) * ((max_price_increase + min_price_increase) / 2)
-            
-            # Bounds for each item's price increase
-            bounds = [(min_price_increase, max_price_increase) for _ in range(num_items)]
-            
-            # Optimize
-            result = minimize(
-                optimize_margin,
-                x0,
-                args=(e, bp, bq),
-                bounds=bounds,
-                method='SLSQP'
-            )
-            
-            if result.success:
-                optimal_price_increases = result.x
-                st.session_state.sim = simulate_price_increase(optimal_price_increases/100, e, bp, bq)
-                st.session_state.user_p = optimal_price_increases
-            else:
-                st.error("Optimization failed. Please try different constraints.")
+    elasticity_dict = dict(zip(elasticity['ITEM'], e))
+    item_price_map = dict(zip(latest_df['ITEM'], latest_df['PRICE']))
+    forecast_df['PRICE'] = forecast_df['ITEM'].map(item_price_map)
 
-    if st.session_state.btn2:
-        panel1 = st.container()
-        panel2 = st.container()
+    tariff_pct = st.sidebar.number_input("Tariff Increase (%)", 0.0, 100.0, 5.0, 0.5)
+    max_margin_loss_pct = st.sidebar.number_input("Max Margin Loss (%)", 0.0, 100.0, 5.0, 0.5)
+    max_price_increase_pct = st.sidebar.number_input("Max Price Increase Cap (%)", 0.0, 100.0, 50.0, 1.0)
 
-        baseline_revenue = st.session_state.sim[0]
-        sim_revenue = st.session_state.sim[1]
-        baseline_qty = st.session_state.sim[2]
-        new_qty = st.session_state.sim[3]
-        margin_gain = st.session_state.sim[4]
-        new_price = st.session_state.sim[5]
+    if st.sidebar.checkbox("Show Elasticity Curves"):
+        st.subheader("🔄 Elasticity Curves by Product")
 
-        with panel1:
-            col1, col2, col3 = st.columns(3)
-            col1.metric(label="Baseline Revenue", value=f"${round(baseline_revenue)}")
-            col2.metric(label="Optimized Revenue", value=f"${round(sim_revenue)}")
-            col3.metric(label="Revenue Change", value=f"${round(sim_revenue - baseline_revenue)}", delta=f"{round(((sim_revenue / baseline_revenue) - 1) * 100, 1)}%")
+        elasticity_df = pd.DataFrame({"ITEM": items, "Elasticity": e})
+        elasticity_df = elasticity_df.sort_values(by="Elasticity")
 
-        with panel2:
-            col1, col2, col3 = st.columns(3)
-            col1.metric(label="Baseline Qty", value=f"{round(baseline_qty)}")
-            col2.metric(label="Optimized Qty", value=f"{round(new_qty)}")
-            col3.metric(label="% Qty Change", value=f"{round(new_qty - baseline_qty)}", delta=f"{round(((new_qty / baseline_qty) - 1) * 100, 1)}%")
+        selected_items = st.multiselect(
+            "Select products to visualize:",
+            options=elasticity_df['ITEM'].tolist(),
+            default=elasticity_df['ITEM'].head(5).tolist()
+        )
 
-        st.subheader(f"Margin Gain from Optimized Prices: ${round(margin_gain)}")
+        price_range = np.linspace(0.5, 2.0, 50)
+        curves = []
+        for item in selected_items:
+            idx = np.where(items == item)[0][0]
+            elasticity_val = e[idx]
+            base_qty = bq[idx]
+            base_price = bp[idx]
 
-        st.markdown("#### Item Price Changes")
-        chart_data_2 = pd.DataFrame({
-            'Item': st.session_state.elastic['ITEM'],
-            'Base Price': np.around(bp, 2),
-            'Optimized Price': np.around(new_price, 2),
-            'Price Increase %': np.around(st.session_state.user_p, 1)
+            for pr in price_range:
+                curves.append({
+                    "ITEM": item,
+                    "Price Multiplier": pr,
+                    "Price": base_price * pr,
+                    "Demand": base_qty * pr ** elasticity_val
+                })
+
+        curves_df = pd.DataFrame(curves)
+
+        elasticity_chart = alt.Chart(curves_df).mark_line().encode(
+            x="Price",
+            y="Demand",
+            color="ITEM"
+        ).properties(title="Price Elasticity Curves")
+
+        st.altair_chart(elasticity_chart, use_container_width=True)
+
+    if st.sidebar.button("Recommend Price Increases"):
+        price_increases = optimize_price_for_profit(
+            e, bp, bq, bc, tariff_pct, max_margin_loss_pct,
+            step=0.5, max_price_increase_pct=max_price_increase_pct
+        )
+        
+        price_increase_dict = dict(zip(items, price_increases))
+        
+        # Calculate new prices and quantities
+        new_prices = bp * (1 + price_increases / 100)
+        new_quantities = bq * (new_prices / bp) ** e
+        bc_tariff = bc * (1 + tariff_pct / 100)
+        
+        # Calculate financial metrics
+        base_revenue = np.dot(bp, bq)
+        base_cost = np.dot(bc_tariff, bq)
+        base_profit = base_revenue - base_cost
+        
+        new_revenue = np.dot(new_prices, new_quantities)
+        new_cost = np.dot(bc_tariff, new_quantities)
+        new_profit = new_revenue - new_cost
+        
+        profit_delta = new_profit - base_profit
+        
+        # Display results
+        st.success("✅ Price Increase Recommendations Generated")
+        
+        # Create results DataFrame
+        results_df = pd.DataFrame({
+            'Item': items,
+            'Current Price': bp,
+            'Recommended Price': new_prices,
+            'Price Increase %': price_increases,
+            'Current Quantity': bq,
+            'Projected Quantity': new_quantities,
+            'Unit Cost (w/ Tariff)': bc_tariff
         })
-
-        chart2 = alt.Chart(chart_data_2.melt('Item', ['Base Price', 'Optimized Price'])).mark_bar().encode(
-            alt.Y('variable:N', axis=alt.Axis(title='')),
-            alt.X('value:Q', axis=alt.Axis(title='Price', grid=False, format='$.2f')),
-            color=alt.Color('variable:N'),
-            row=alt.Row('Item:O', header=alt.Header(labelAngle=0, labelAlign='left'))
-        ).configure_view(stroke='transparent')
-
-        st.altair_chart(chart2, theme="streamlit", use_container_width=True)
-
-        # Display price increase percentages
-        st.markdown("#### Price Increase Percentages")
-        st.dataframe(chart_data_2[['Item', 'Price Increase %']].style.format({'Price Increase %': '{:.1f}%'}))
-
+        
+        st.markdown("### 💰 Financial Summary")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Revenue (Before)", f"${base_revenue:,.2f}")
+        col1.metric("Revenue (After)", f"${new_revenue:,.2f}", f"{((new_revenue - base_revenue)/base_revenue)*100:.2f}%")
+        
+        col2.metric("Profit (Before)", f"${base_profit:,.2f}")
+        col2.metric("Profit (After)", f"${new_profit:,.2f}", f"{profit_delta/base_profit*100:.2f}%")
+        
+        col3.metric("Margin Δ (%)", f"{((new_profit - base_profit)/base_profit)*100:.2f}%")
+        col3.metric("Average Unit Cost (w/ Tariff)", f"${bc_tariff.mean():.2f}")
+        
+        st.markdown("### 📊 Price Increase Recommendations")
+        st.dataframe(results_df.style.format({
+            'Current Price': '${:.2f}',
+            'Recommended Price': '${:.2f}',
+            'Price Increase %': '{:.2f}%',
+            'Current Quantity': '{:.0f}',
+            'Projected Quantity': '{:.0f}',
+            'Unit Cost (w/ Tariff)': '${:.2f}'
+        }))
+        
+        # Simulate weekly demand
+        weekly_sim = simulate_weekly_demand(forecast_df, elasticity_dict, price_increase_dict)
+        
+        st.subheader("📅 Simulated Weekly Demand After Price Increase")
+        st.dataframe(weekly_sim[['ITEM', 'DATE', 'UNIT_FORECAST', 'Adj_Units']], use_container_width=True)
+        
+        chart = alt.Chart(weekly_sim).mark_line(point=True).encode(
+            x='DATE:T', y='Adj_Units:Q', color='ITEM:N'
+        ).properties(title="Adjusted Weekly Forecast After Price Increase")
+        
+        st.altair_chart(chart, use_container_width=True)
+        
         st.download_button(
-            label="Download Results",
-            data=chart_data_2.to_csv(index=False).encode('utf-8'),
-            file_name='optimized_price_changes.csv',
-            mime='text/csv',
+            "Download Results",
+            data=results_df.to_csv(index=False).encode('utf-8'),
+            file_name="price_optimization_results.csv",
+            mime="text/csv"
         )
 else:
-    st.title(":orange[Finish Previous Tabs!]")
+    st.warning("⚠️ Please upload your data and run the forecast and elasticity steps first.")
