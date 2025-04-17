@@ -23,11 +23,8 @@ def optimize_price_for_profit(
 
     bc_tariff = bc * (1 + tariff_pct / 100)
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc, bq)
+    base_cost = np.dot(bc_tariff, bq)  # Fix cost basis to include tariff
     base_profit = base_revenue - base_cost
-
-    fallback_profit = -np.inf
-    fallback_increase = 0
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
         x = pct / 100
@@ -38,18 +35,13 @@ def optimize_price_for_profit(
         new_profit = new_revenue - new_cost
 
         margin_delta_pct = ((new_profit - base_profit) / base_profit) * 100
-        is_valid = margin_delta_pct >= -max_margin_loss_pct
 
-        if is_valid:
+        if margin_delta_pct >= -max_margin_loss_pct:
             if new_profit > best_profit:
                 best_profit = new_profit
                 best_increase = pct
-        else:
-            if new_profit > fallback_profit:
-                fallback_profit = new_profit
-                fallback_increase = pct
 
-    return best_increase if best_increase is not None else fallback_increase
+    return best_increase
 
 # --- Streamlit App ---
 st.set_page_config(page_title="Price Optimization", layout="wide")
@@ -81,7 +73,6 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
     if st.sidebar.checkbox("Show Elasticity Curves"):
         st.subheader("🔄 Elasticity Curves by Product")
 
-        # Sort items by elasticity (most to least elastic)
         elasticity_df = pd.DataFrame({"ITEM": items, "Elasticity": e})
         elasticity_df = elasticity_df.sort_values(by="Elasticity")
 
@@ -123,45 +114,48 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
             step=0.5, max_price_increase_pct=max_price_increase_pct
         )
 
-        st.success(f"✅ Recommended Price Increase: **{price_increase_pct:.2f}%**")
+        if price_increase_pct is None:
+            st.error("❌ No valid price increase meets the margin constraint. Try raising the margin loss threshold.")
+        else:
+            st.success(f"✅ Recommended Price Increase: **{price_increase_pct:.2f}%**")
 
-        x = price_increase_pct / 100
-        new_price = bp * (1 + x)
-        new_qty = bq * (new_price / bp) ** e
-        bc_tariff = bc * (1 + tariff_pct / 100)
+            x = price_increase_pct / 100
+            new_price = bp * (1 + x)
+            new_qty = bq * (new_price / bp) ** e
+            bc_tariff = bc * (1 + tariff_pct / 100)
 
-        base_revenue = np.dot(bp, bq)
-        base_cost = np.dot(bc, bq)
-        base_profit = base_revenue - base_cost
+            base_revenue = np.dot(bp, bq)
+            base_cost = np.dot(bc_tariff, bq)
+            base_profit = base_revenue - base_cost
 
-        new_revenue = np.dot(new_price, new_qty)
-        new_cost = np.dot(bc_tariff, new_qty)
-        new_profit = new_revenue - new_cost
+            new_revenue = np.dot(new_price, new_qty)
+            new_cost = np.dot(bc_tariff, new_qty)
+            new_profit = new_revenue - new_cost
 
-        profit_delta = new_profit - base_profit
+            profit_delta = new_profit - base_profit
 
-        st.markdown("### 💰 Financial Summary")
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Revenue (Before)", f"${base_revenue:,.2f}")
-        col1.metric("Revenue (After)", f"${new_revenue:,.2f}", f"{((new_revenue - base_revenue)/base_revenue)*100:.2f}%")
+            st.markdown("### 💰 Financial Summary")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Revenue (Before)", f"${base_revenue:,.2f}")
+            col1.metric("Revenue (After)", f"${new_revenue:,.2f}", f"{((new_revenue - base_revenue)/base_revenue)*100:.2f}%")
 
-        col2.metric("Profit (Before)", f"${base_profit:,.2f}")
-        col2.metric("Profit (After)", f"${new_profit:,.2f}", f"{profit_delta/base_profit*100:.2f}%")
+            col2.metric("Profit (Before)", f"${base_profit:,.2f}")
+            col2.metric("Profit (After)", f"${new_profit:,.2f}", f"{profit_delta/base_profit*100:.2f}%")
 
-        col3.metric("Margin Δ (%)", f"{((new_profit - base_profit)/base_profit)*100:.2f}%")
-        col3.metric("Unit Cost (w/ Tariff)", f"${bc_tariff.mean():.2f}")
+            col3.metric("Margin Δ (%)", f"{((new_profit - base_profit)/base_profit)*100:.2f}%")
+            col3.metric("Unit Cost (w/ Tariff)", f"${bc_tariff.mean():.2f}")
 
-        weekly_sim = simulate_weekly_demand(forecast_df, elasticity_dict, price_increase_pct)
-        st.subheader("📅 Simulated Weekly Demand After Price Increase")
-        st.dataframe(weekly_sim[['ITEM', 'DATE', 'UNIT_FORECAST', 'Adj_Units']], use_container_width=True)
+            weekly_sim = simulate_weekly_demand(forecast_df, elasticity_dict, price_increase_pct)
+            st.subheader("📅 Simulated Weekly Demand After Price Increase")
+            st.dataframe(weekly_sim[['ITEM', 'DATE', 'UNIT_FORECAST', 'Adj_Units']], use_container_width=True)
 
-        chart = alt.Chart(weekly_sim).mark_line(point=True).encode(
-            x='DATE:T', y='Adj_Units:Q', color='ITEM:N'
-        ).properties(title="Adjusted Weekly Forecast After Price Increase")
+            chart = alt.Chart(weekly_sim).mark_line(point=True).encode(
+                x='DATE:T', y='Adj_Units:Q', color='ITEM:N'
+            ).properties(title="Adjusted Weekly Forecast After Price Increase")
 
-        st.altair_chart(chart, use_container_width=True)
-        st.download_button("Download Adjusted Forecast", data=weekly_sim.to_csv(index=False).encode('utf-8'),
-                           file_name="adjusted_weekly_forecast.csv", mime="text/csv")
+            st.altair_chart(chart, use_container_width=True)
+            st.download_button("Download Adjusted Forecast", data=weekly_sim.to_csv(index=False).encode('utf-8'),
+                               file_name="adjusted_weekly_forecast.csv", mime="text/csv")
 
 else:
     st.warning("⚠️ Please upload your data and run the forecast and elasticity steps first.")
