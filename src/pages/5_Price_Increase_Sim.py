@@ -23,7 +23,7 @@ def optimize_price_for_profit(
 
     bc_tariff = bc * (1 + tariff_pct / 100)
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc, bq)
+    base_cost = np.dot(bc_tariff, bq)
     base_profit = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
@@ -36,10 +36,11 @@ def optimize_price_for_profit(
 
         margin_delta_pct = ((new_profit - base_profit) / base_profit) * 100
 
-        # Always prefer higher profit while staying within allowed margin drop
-        if margin_delta_pct >= -max_margin_loss_pct and new_profit > best_profit:
-            best_profit = new_profit
-            best_increase = pct
+        # Respect margin constraint: only accept candidates within margin drop limit
+        if margin_delta_pct >= -max_margin_loss_pct:
+            if new_profit > best_profit:
+                best_profit = new_profit
+                best_increase = pct
 
     return best_increase
 
@@ -121,7 +122,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
         bc_tariff = bc * (1 + tariff_pct / 100)
 
         base_revenue = np.dot(bp, bq)
-        base_cost = np.dot(bc, bq)
+        base_cost = np.dot(bc_tariff, bq)
         base_profit = base_revenue - base_cost
 
         new_revenue = np.dot(new_price, new_qty)
@@ -155,4 +156,3 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
 
 else:
     st.warning("⚠️ Please upload your data and run the forecast and elasticity steps first.")
-
