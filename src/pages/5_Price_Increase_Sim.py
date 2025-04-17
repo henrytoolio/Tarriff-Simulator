@@ -23,7 +23,7 @@ def optimize_price_for_profit(
 
     bc_tariff = bc * (1 + tariff_pct / 100)
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc_tariff, bq)  # Fix cost basis to include tariff
+    base_cost = np.dot(bc_tariff, bq)
     base_profit = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
@@ -69,7 +69,6 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
     max_margin_loss_pct = st.sidebar.number_input("Max Margin Loss (%)", 0.0, 100.0, 5.0, 0.5)
     max_price_increase_pct = st.sidebar.number_input("Max Price Increase Cap (%)", 0.0, 100.0, 50.0, 1.0)
 
-    # --- Elasticity Curve Toggle ---
     if st.sidebar.checkbox("Show Elasticity Curves"):
         st.subheader("🔄 Elasticity Curves by Product")
 
@@ -159,3 +158,4 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
 
 else:
     st.warning("⚠️ Please upload your data and run the forecast and elasticity steps first.")
+
