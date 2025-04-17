@@ -1,151 +1,138 @@
 import streamlit as st
 import numpy as np
 import pandas as pd
-from scipy.optimize import differential_evolution, NonlinearConstraint, Bounds
 import altair as alt
+from scipy.optimize import minimize
+
 
 @st.cache_data
-def objective_func(x, e, bp, bq):
+def simulate_price_increase(x, e, bp, bq):
+    perc_qty_change = np.multiply(e, x)  # elasticity * % price change
+    new_price = bp + np.multiply(bp, x)  # increased price
+    new_qty = bq + np.multiply(perc_qty_change, bq)  # expected demand drop
+    sim_revenue = np.dot(new_price, new_qty)
+    baseline_revenue = np.dot(bp, bq)
+    baseline_qty = sum(bq)
+    sim_qty = sum(new_qty)
+    margin_gain = np.dot(new_price - bp, new_qty)  # revenue gain from price increase
+    return [baseline_revenue, sim_revenue, baseline_qty, sim_qty, margin_gain, new_price]
+
+@st.cache_data
+def optimize_margin(x, e, bp, bq):
+    # Convert x from percentage to decimal
+    x = x / 100
     perc_qty_change = np.multiply(e, x)
     new_price = bp + np.multiply(bp, x)
     new_qty = bq + np.multiply(perc_qty_change, bq)
-    revenue = np.dot(new_price, new_qty)
-    return -revenue
+    margin = np.dot(new_price - bp, new_qty)
+    # We negate margin because we want to maximize it
+    return -margin
 
-@st.cache_data
-def investment(x, bp, bq):
-    new_price = bp + np.multiply(bp, x)
-    lm = bp - new_price
-    investment = np.dot(lm, bq)
-    return investment
+#test
 
-# Initialize session state variables
-if 'btn3' not in st.session_state:
-    st.session_state['btn3'] = False
+# Session state variables
+if 'btn2' not in st.session_state:
+    st.session_state['btn2'] = False
 
-if 'opt' not in st.session_state:
-    st.session_state.opt = None  # Initialize as None
+if 'sim' not in st.session_state:
+    st.session_state.sim = ''
 
-if 'opt_budget' not in st.session_state:
-    st.session_state.opt_budget = ''
-
-if 'slider_budget' not in st.session_state:
-    st.session_state.slider_budget = ''
-
-if 'opt_price_p' not in st.session_state:
-    st.session_state.opt_price_p = ''
+if 'user_p' not in st.session_state:
+    st.session_state.user_p = ''
 
 def callback1():
-    st.session_state['btn3'] = True
+    st.session_state['btn2'] = True
 
-if (
-    'df' in st.session_state and isinstance(st.session_state.df, pd.DataFrame) and not st.session_state.df.empty and
-    'elastic' in st.session_state and isinstance(st.session_state.elastic, pd.DataFrame) and not st.session_state.elastic.empty and
-    'forecast' in st.session_state and isinstance(st.session_state.forecast, pd.DataFrame) and not st.session_state.forecast.empty
-):
-    st.title("Optimization Results")
+if st.session_state.df is not '' and st.session_state.elastic is not '' and st.session_state.forecast is not '':
+    st.title("Price Optimization Results")
 
     df = st.session_state.df
 
     e = st.session_state.elastic['Elasticities'].to_numpy()
     bp = df.loc[df.groupby(["ITEM"])["DATE"].idxmax()].PRICE.to_numpy()
     bq = st.session_state.forecast.groupby("ITEM").tail(4).groupby("ITEM")["UNIT_FORECAST"].sum().to_numpy()
-    st.session_state.slider_budget = round(int(np.dot(bp, bq)))
-    budget = round(int(np.dot(bp, bq)))
+    num_items = e.size
 
-    if st.session_state.opt_budget == '':
-        max_budget = st.sidebar.slider("Budget:", 0, budget, int(0.3 * budget), step=10, help="Max Budget Available for Price Investment", format="$%d")
-    else:
-        max_budget = st.sidebar.slider("Budget:", 0, st.session_state.slider_budget, st.session_state.opt_budget, step=10, help="Max Budget Available for Price Investment", format="$%d")
+    # Price increase constraints
+    st.sidebar.markdown("### Optimization Constraints")
+    max_price_increase = st.sidebar.slider("Maximum Price Increase:", 0, 50, 20, step=5, help="Maximum allowed price increase per item", format="%d%%")
+    min_price_increase = st.sidebar.slider("Minimum Price Increase:", 0, 50, 0, step=5, help="Minimum required price increase per item", format="%d%%")
 
-    if st.session_state.opt_price_p == '':
-        max_price = st.sidebar.slider("Maximum Price Reduction:", 0, 50, 20, step=5, help="Maximum Price Reduction Allowed per Item", format="%d%%")
-    else:
-        max_price = st.sidebar.slider("Maximum Price Reduction:", 0, 50, st.session_state.opt_price_p, step=5, help="Maximum Price Reduction Allowed per Item", format="%d%%")
-
-    num_items = e.size  # number of items
-
-    if st.sidebar.button("Optimize", on_click=callback1):
-        with st.spinner("Optimizing..."):
-            st.session_state.opt_price_p = max_price
-            st.session_state.opt_budget = max_budget
-
-            # Add a progress bar
-            progress_bar = st.progress(0)
-
-            # Update the callback function to accept two arguments
-            def callback_func(x, convergence):
-                progress_bar.progress(min(convergence, 1.0))  # Update progress
-
-            # Optimizer
-            st.session_state.opt = differential_evolution(
-                objective_func,
-                x0=-(max_price / 100) * np.ones(num_items) * 0.5,
+    if st.sidebar.button("Optimize Prices", on_click=callback1):
+        with st.spinner("Optimizing prices for maximum margin..."):
+            # Initial guess: equal price increases for all items
+            x0 = np.ones(num_items) * ((max_price_increase + min_price_increase) / 2)
+            
+            # Bounds for each item's price increase
+            bounds = [(min_price_increase, max_price_increase) for _ in range(num_items)]
+            
+            # Optimize
+            result = minimize(
+                optimize_margin,
+                x0,
                 args=(e, bp, bq),
-                bounds=Bounds(lb=-(max_price / 100) * np.ones(num_items), ub=np.zeros(num_items)),
-                constraints=NonlinearConstraint(lambda x: investment(x, bp, bq), lb=0, ub=max_budget),
-                seed=1234,
-                maxiter=200,
-                popsize=10,
-                workers=1,  # Disable multiprocessing
-                callback=callback_func
+                bounds=bounds,
+                method='SLSQP'
             )
+            
+            if result.success:
+                optimal_price_increases = result.x
+                st.session_state.sim = simulate_price_increase(optimal_price_increases/100, e, bp, bq)
+                st.session_state.user_p = optimal_price_increases
+            else:
+                st.error("Optimization failed. Please try different constraints.")
 
-    if st.session_state.btn3:
-        if st.session_state.opt and hasattr(st.session_state.opt, "success") and st.session_state.opt.success:
-            # Extract results for graphing
-            new_price = bp + np.multiply(bp, st.session_state.opt.x)
-            perc_qty_change = np.multiply(e, st.session_state.opt.x)
-            new_qty = bq + np.multiply(perc_qty_change, bq)
-            baseline_revenue = np.dot(bp, bq)
-            baseline_qty = sum(bq)
+    if st.session_state.btn2:
+        panel1 = st.container()
+        panel2 = st.container()
 
-            st.header(":green[Optimal Solution Found]")
+        baseline_revenue = st.session_state.sim[0]
+        sim_revenue = st.session_state.sim[1]
+        baseline_qty = st.session_state.sim[2]
+        new_qty = st.session_state.sim[3]
+        margin_gain = st.session_state.sim[4]
+        new_price = st.session_state.sim[5]
 
-            # Display metrics
+        with panel1:
             col1, col2, col3 = st.columns(3)
             col1.metric(label="Baseline Revenue", value=f"${round(baseline_revenue)}")
-            col2.metric(label="Optimize Revenue", value=f"${-round(st.session_state.opt.fun)}")
-            col3.metric(label="Revenue Change", value=f"${-round(st.session_state.opt.fun) - round(baseline_revenue)}", delta=f"{round(((-st.session_state.opt.fun / baseline_revenue) - 1) * 100, 1)}%")
+            col2.metric(label="Optimized Revenue", value=f"${round(sim_revenue)}")
+            col3.metric(label="Revenue Change", value=f"${round(sim_revenue - baseline_revenue)}", delta=f"{round(((sim_revenue / baseline_revenue) - 1) * 100, 1)}%")
 
-            # Display quantity metrics
+        with panel2:
             col1, col2, col3 = st.columns(3)
             col1.metric(label="Baseline Qty", value=f"{round(baseline_qty)}")
-            col2.metric(label="Optimize Qty", value=f"{round(sum(new_qty))}")
-            col3.metric(label="% Qty Change", value=f"{round(sum(new_qty)) - round(baseline_qty)}", delta=f"{round(((sum(new_qty) / baseline_qty) - 1) * 100, 1)}%")
+            col2.metric(label="Optimized Qty", value=f"{round(new_qty)}")
+            col3.metric(label="% Qty Change", value=f"{round(new_qty - baseline_qty)}", delta=f"{round(((new_qty / baseline_qty) - 1) * 100, 1)}%")
 
-            st.subheader(f"Budget Used: ${round(investment(st.session_state.opt.x, bp, bq))}")
+        st.subheader(f"Margin Gain from Optimized Prices: ${round(margin_gain)}")
 
-            # Tabs for graphs
-            tab1, tab2 = st.tabs(["Item Price Change", "Optimal Item Price"])
+        st.markdown("#### Item Price Changes")
+        chart_data_2 = pd.DataFrame({
+            'Item': st.session_state.elastic['ITEM'],
+            'Base Price': np.around(bp, 2),
+            'Optimized Price': np.around(new_price, 2),
+            'Price Increase %': np.around(st.session_state.user_p, 1)
+        })
 
-            with tab2:
-                chart_data_1 = pd.DataFrame({'% Price Change': np.around(st.session_state.opt.x, 3), 'Item': st.session_state.elastic['ITEM']})
-                chart1 = alt.Chart(chart_data_1).mark_bar().encode(
-                    x=alt.X('% Price Change', axis=alt.Axis(format='%')),
-                    y=alt.Y('Item')
-                )
-                st.altair_chart(chart1, theme="streamlit", use_container_width=True)
+        chart2 = alt.Chart(chart_data_2.melt('Item', ['Base Price', 'Optimized Price'])).mark_bar().encode(
+            alt.Y('variable:N', axis=alt.Axis(title='')),
+            alt.X('value:Q', axis=alt.Axis(title='Price', grid=False, format='$.2f')),
+            color=alt.Color('variable:N'),
+            row=alt.Row('Item:O', header=alt.Header(labelAngle=0, labelAlign='left'))
+        ).configure_view(stroke='transparent')
 
-            with tab1:
-                chart_data_2 = pd.DataFrame({'Item': st.session_state.elastic['ITEM'], 'Base Price': np.around(bp, 2), 'New Price': np.around(new_price, 2)})
-                chart2 = alt.Chart(chart_data_2.melt('Item')).mark_bar().encode(
-                    alt.Y('variable:N', axis=alt.Axis(title='')),
-                    alt.X('value:Q', axis=alt.Axis(title='price', grid=False, format='$.2f')),
-                    color=alt.Color('variable:N'),
-                    row=alt.Row('Item:O', header=alt.Header(labelAngle=0, labelAlign='left'))
-                ).configure_view(stroke='transparent')
-                st.altair_chart(chart2, theme="streamlit", use_container_width=True)
+        st.altair_chart(chart2, theme="streamlit", use_container_width=True)
 
-            # Download button for results
-            st.download_button(
-                label="Download",
-                data=chart_data_2.to_csv(index=False).encode('utf-8'),
-                file_name='optimized_price_change.csv',
-                mime='text/csv'
-            )
+        # Display price increase percentages
+        st.markdown("#### Price Increase Percentages")
+        st.dataframe(chart_data_2[['Item', 'Price Increase %']].style.format({'Price Increase %': '{:.1f}%'}))
 
-        else:
-            st.header(":red[Optimization failed or not yet performed]")
+        st.download_button(
+            label="Download Results",
+            data=chart_data_2.to_csv(index=False).encode('utf-8'),
+            file_name='optimized_price_changes.csv',
+            mime='text/csv',
+        )
 else:
     st.title(":orange[Finish Previous Tabs!]")
