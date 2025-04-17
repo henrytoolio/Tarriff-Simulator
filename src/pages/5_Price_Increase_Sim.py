@@ -105,6 +105,7 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
             new_profit = new_revenue - new_cost
             new_cost = np.dot(bc_tariff, new_qty)
             new_margin = new_revenue - new_cost
+            new_profit = new_revenue - new_cost
             profit_delta = new_margin - base_margin
 
             # --- Financial Summary ---
