@@ -23,7 +23,7 @@ def optimize_price_for_profit(
 
     bc_tariff = bc * (1 + tariff_pct / 100)
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc, bq)
+    base_cost = np.dot(bc_tariff, bq)  # corrected to use tariffed cost
     base_profit = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
@@ -120,7 +120,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
         bc_tariff = bc * (1 + tariff_pct / 100)
 
         base_revenue = np.dot(bp, bq)
-        base_cost = np.dot(bc, bq)
+        base_cost = np.dot(bc_tariff, bq)
         base_profit = base_revenue - base_cost
 
         new_revenue = np.dot(new_price, new_qty)
