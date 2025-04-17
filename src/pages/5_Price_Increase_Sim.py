@@ -54,7 +54,7 @@ def optimize_price_for_profit(
 # --- Streamlit App ---
 st.title("\ud83d\udcc8 Price Optimization: Maximize Profit Under Margin Constraint")
 
-if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in st.session_state:
+if st.session_state.get('df') is not None and st.session_state.get('elastic') is not None and st.session_state.get('forecast') is not None:
     df = st.session_state.df
     forecast_df = st.session_state.forecast.copy()
     elasticity = st.session_state.elastic
@@ -75,6 +75,46 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
     tariff_pct = st.sidebar.number_input("Tariff Increase (%)", 0.0, 100.0, 5.0, 0.5)
     max_margin_loss_pct = st.sidebar.number_input("Max Margin Loss (%)", 0.0, 100.0, 5.0, 0.5)
     max_price_increase_pct = st.sidebar.number_input("Max Price Increase Cap (%)", 0.0, 100.0, 50.0, 1.0)
+
+    # --- Elasticity Curve Toggle ---
+    if st.sidebar.checkbox("Show Elasticity Curves"):
+        st.subheader("\ud83d\udd04 Elasticity Curves by Product")
+
+        # Sort items by elasticity (most to least elastic)
+        elasticity_df = pd.DataFrame({"ITEM": items, "Elasticity": e})
+        elasticity_df = elasticity_df.sort_values(by="Elasticity")
+
+        selected_items = st.multiselect(
+            "Select products to visualize:",
+            options=elasticity_df['ITEM'].tolist(),
+            default=elasticity_df['ITEM'].head(5).tolist()
+        )
+
+        price_range = np.linspace(0.5, 2.0, 50)  # Multiplier on base price
+        curves = []
+        for item in selected_items:
+            idx = np.where(items == item)[0][0]
+            elasticity_val = e[idx]
+            base_qty = bq[idx]
+            base_price = bp[idx]
+
+            for pr in price_range:
+                curves.append({
+                    "ITEM": item,
+                    "Price Multiplier": pr,
+                    "Price": base_price * pr,
+                    "Demand": base_qty * pr ** elasticity_val
+                })
+
+        curves_df = pd.DataFrame(curves)
+
+        elasticity_chart = alt.Chart(curves_df).mark_line().encode(
+            x="Price",
+            y="Demand",
+            color="ITEM"
+        ).properties(title="Price Elasticity Curves")
+
+        st.altair_chart(elasticity_chart, use_container_width=True)
 
     if st.sidebar.button("Recommend Price Increase"):
         price_increase_pct = optimize_price_for_profit(
@@ -110,7 +150,6 @@ if 'df' in st.session_state and 'elastic' in st.session_state and 'forecast' in 
         col3.metric("Margin \u0394 (%)", f"{((new_profit - base_profit)/base_profit)*100:.2f}%")
         col3.metric("Unit Cost (w/ Tariff)", f"${bc_tariff.mean():.2f}")
 
-        # Simulated Weekly Demand
         weekly_sim = simulate_weekly_demand(forecast_df, elasticity_dict, price_increase_pct)
         st.subheader("\ud83d\uddd3\ufe0f Simulated Weekly Demand After Price Increase")
         st.dataframe(weekly_sim[['ITEM', 'DATE', 'UNIT_FORECAST', 'Adj_Units']], use_container_width=True)
