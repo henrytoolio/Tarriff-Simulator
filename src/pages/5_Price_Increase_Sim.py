@@ -19,11 +19,11 @@ def optimize_price_for_profit(
     step=0.5, max_price_increase_pct=50
 ):
     best_profit = -np.inf
-    best_increase = None
+    best_increase = 0.0
 
     bc_tariff = bc * (1 + tariff_pct / 100)
     base_revenue = np.dot(bp, bq)
-    base_cost = np.dot(bc, bq)  # base cost uses original cost without tariff
+    base_cost = np.dot(bc, bq)
     base_profit = base_revenue - base_cost
 
     for pct in np.arange(0, max_price_increase_pct + step, step):
@@ -31,17 +31,16 @@ def optimize_price_for_profit(
         new_price = bp * (1 + x)
         new_qty = bq * (new_price / bp) ** e
         new_revenue = np.dot(new_price, new_qty)
-        new_cost = np.dot(bc_tariff, new_qty)  # new cost includes tariff
+        new_cost = np.dot(bc_tariff, new_qty)
         new_profit = new_revenue - new_cost
 
         margin_delta_pct = ((new_profit - base_profit) / base_profit) * 100
 
-        if margin_delta_pct >= -max_margin_loss_pct:
-            if new_profit > best_profit:
-                best_profit = new_profit
-                best_increase = pct
+        if margin_delta_pct >= -max_margin_loss_pct and new_profit > best_profit:
+            best_profit = new_profit
+            best_increase = pct
 
-    return best_increase if best_increase is not None else 0.0
+    return best_increase
 
 # --- Streamlit App ---
 st.set_page_config(page_title="Price Optimization", layout="wide")
@@ -121,7 +120,7 @@ if st.session_state.get('df') is not None and st.session_state.get('elastic') is
         bc_tariff = bc * (1 + tariff_pct / 100)
 
         base_revenue = np.dot(bp, bq)
-        base_cost = np.dot(bc, bq)  # base cost uses original cost
+        base_cost = np.dot(bc, bq)
         base_profit = base_revenue - base_cost
 
         new_revenue = np.dot(new_price, new_qty)
